@@ -1,0 +1,4 @@
+rootProject.name = 'blaze-consumer'
+
+include ':blaze-commons'
+project(':blaze-commons').projectDir = file("../blaze-commons")
