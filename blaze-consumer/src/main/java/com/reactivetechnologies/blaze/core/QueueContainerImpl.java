@@ -226,7 +226,8 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 		asyncTasks.submit(new Runnable() {
 			@Override
 			public void run() {
-				redisOps.endCommit(qr, preparedKey);
+				//redisOps.endCommit(qr, preparedKey);
+				redisOps.endCommit(qr, preparedKey, false);
 			}
 		});
 		
@@ -251,8 +252,9 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 	@Override
 	public void rollback(QRecord qr) {
 		String preparedKey = RedisDataAccessor.prepareListKey(qr.getKey().getExchange(), qr.getKey().getRoutingKey());
-		redisOps.endCommit(qr, preparedKey);
-		redisOps.reEnqueue(qr, preparedKey);
+		//redisOps.endCommit(qr, preparedKey);
+		//redisOps.reEnqueue(qr, preparedKey);
+		redisOps.endCommit(qr, preparedKey, true);
 	}
 	@Value("${consumer.poll.await.millis:100}")
 	private long pollInterval;
@@ -284,7 +286,7 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 	 */
 	QRecord fetchHead(String exchange, String routing, long pollInterval2, TimeUnit milliseconds) throws TimeoutException
 	{
-		QRecord qr = redisOps.dequeueReliable(exchange, routing, pollInterval2, milliseconds);
+		QRecord qr = redisOps.dequeue(exchange, routing, pollInterval2, milliseconds);
 		return qr;
 	}
 }

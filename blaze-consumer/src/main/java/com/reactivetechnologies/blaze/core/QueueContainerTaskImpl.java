@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import com.reactivetechnologies.blaze.struct.QRecord;
 import com.reactivetechnologies.blaze.throttle.ConsumerThrottler;
 import com.reactivetechnologies.mq.Data;
+import com.reactivetechnologies.mq.common.BlazeInternalError;
 import com.reactivetechnologies.mq.common.BlazeMessagingException;
 import com.reactivetechnologies.mq.common.MessageThrottledException;
 import com.reactivetechnologies.mq.consume.AbstractQueueListener;
@@ -62,7 +63,7 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 
 	@Override
 	protected final void compute() {
-		log.debug("Fetching next record..compute");
+		//log.debug("Fetching next record..compute");
 		if (concurrency > 1) 
 		{
 			forkTasks(concurrency);
@@ -110,6 +111,11 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 			
 		}
 	}
+	private void discardMessage(QRecord qr, Throwable e)
+	{
+		log.error("* MESSAGE BEING DISCARDED. Check stacktrace for root cause.", e);
+		container.commit(qr, false);
+	}
 	/**
 	 * 
 	 * @param qr
@@ -119,18 +125,24 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 	{
 		Data d = null;
 		qr.incrDeliveryCount();
+		//delivery count is changing. so equals will fail on redelivery
+		//so while doing an endCommit, decrementing the delivery count
+		
 		if(e instanceof BlazeMessagingException)
 		{
 			d = ((BlazeMessagingException) e).getRecord();
-		}
-		if(allowRedelivery(qr, d))
-		{
-			executeRollback(qr, e, d);
+			if(allowRedelivery(qr, d))
+			{
+				executeRollback(qr, e, d);
+			}
+			else
+			{
+				discardMessage(qr, e);
+			}
 		}
 		else
 		{
-			log.error("* MESSAGE BEING DISCARDED. Check stacktrace for root cause.", e);
-			container.commit(qr, false);
+			discardMessage(qr, e);
 		}
 	}
 	/**
@@ -166,7 +178,7 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 	 */
 	private void run() 
 	{
-		log.debug("Fetching next record..");
+		//log.debug("Fetching next record..");
 		try 
 		{
 			QRecord nextMessage = fetchHead();
@@ -181,11 +193,13 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 		} 
 		catch (MessageThrottledException e) 
 		{
-			log.debug(e+"");
+			//log.debug(e+"");
 		}
 		catch(Exception e)
 		{
-			log.error("Unexpected error!", e);
+			BlazeInternalError be = new BlazeInternalError("Unexpected error!", e);
+			log.error("Internal error: Check stacktrace", be);
+			throw be;
 		}
 		finally 
 		{

@@ -21,6 +21,24 @@ public class QRecord implements Serializable{
 	public QRecord(){
 		setKey(new QKey());
 	}
+	public QRecord copyWithDecrCount()
+	{
+		QRecord copy = new QRecord(this);
+		copy.setRedeliveryCount((short) (this.getRedeliveryCount()-1));
+		return copy;
+	}
+	private QRecord(QRecord q)
+	{
+		this.setKey(q.getKey());
+		this.setCorrId(q.getCorrId());
+		this.setExpiryMillis(q.getExpiryMillis());
+		this.setPayload(q.getPayload());
+		this.setRedelivered(q.isRedelivered());
+		this.setRedeliveryCount(q.getRedeliveryCount());
+		this.setReplyTo(q.getReplyTo());
+		this.setT0TS(q.getT0TS());
+		this.setTnTS(getTnTS());
+	}
 	public QRecord(Data md)
 	{
 		this();

@@ -9,11 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.dao.DataAccessException;
-import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.BoundListOperations;
-import org.springframework.data.redis.core.RedisCallback;
-import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -97,27 +93,20 @@ public class QueueServiceImpl implements QueueService{
 		return listOps.size().intValue();
 	}
 
+	public static final int MAX_COMPARE_ON_CLEAR = 5;
 	@Override
 	public void clear(String xchangeKey, String routeKey) {
-		log.warn("'clear' is an expensive operation since Redis does not provide an explicit operation");
-		long llen = size(xchangeKey, routeKey);
-		if(llen > 0)
-		{
-			redisOps.executePipelined(new RedisCallback<Integer>() {
-
-				@Override
-				public Integer doInRedis(RedisConnection connection) throws DataAccessException {
-					StringRedisSerializer ser = redisOps.getKeySerializer();
-					byte[] key = ser.serialize(prepareKey(xchangeKey, routeKey));
-					for(long l=0; l<llen; l++)
-					{
-						connection.lPop(key);
-					}
-					return null;
-				}
-			});
-		}
+		log.info("'clear' is an expensive operation since Redis does not provide an explicit operation");
+		boolean cleared = false;
+		int iter = 0;
+		do {
+			cleared = redisOps.clear(xchangeKey, routeKey);
+		} while (++iter < MAX_COMPARE_ON_CLEAR && !cleared);
 		
+		if(!cleared)
+		{
+			log.warn("clear: Breaking circuit after iterating for max "+MAX_COMPARE_ON_CLEAR+" times");
+		}
 	}
 
 	@Override
@@ -144,7 +133,7 @@ public class QueueServiceImpl implements QueueService{
 
 	@Override
 	public QRecord getNext(String xchng, String route, long timeout, TimeUnit unit) {
-		return redisOps.dequeue(xchng, route, timeout, unit);
+		return redisOps.pop(xchng, route, timeout, unit);
 	}
 
 }

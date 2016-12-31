@@ -15,6 +15,7 @@
  */
 package com.reactivetechnologies.blaze.ops;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -27,10 +28,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.BoundListOperations;
 import org.springframework.data.redis.core.BoundSetOperations;
+import org.springframework.data.redis.core.ListOperations;
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.types.RedisClientInfo;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
@@ -145,19 +150,61 @@ public class RedisDataAccessor {
 	 * @param qr
 	 * @param key
 	 */
-	public void endCommit(QRecord qr, String key) {
+	void endCommit0(QRecord qr, String key) {
 		BoundListOperations<String, QRecord> listOps = redisTemplate.boundListOps(prepareInProcKey(key));
 		//LREM count < 0: Remove elements equal to value moving from tail to head.
 		//since we are pushing from left, the item will be moving towards tail. this operation
 		//has a complexity of O(N), so we should try to minimize N
-		listOps.remove(-1, qr);
+		long c = listOps.remove(-1, qr);
+		if (c != 1) {
+			c = listOps.remove(1, qr);
+			if (c != 1) {
+				log.warn("Message was not removed from inproc on endCommit");
+			}
+		}
+	}
+	/**
+	 * Mark the end of a commit phase. The action would be to remove message from inproc queue.
+	 * Also, if enqueueAgain is true, message will be enqueued at head of source queue. The operation
+	 * happens atomically from within a MULTI block.
+	 * 
+	 * @param qr
+	 * @param key
+	 * @param enqueueAgain
+	 */
+	public void endCommit(QRecord qr, String key, boolean enqueueAgain) {
+		List<Object> results = redisTemplate.execute(new SessionCallback<List<Object>>() {
+
+			@Override
+			public <K, V> List<Object> execute(RedisOperations<K, V> operations) throws DataAccessException {
+				operations.multi();
+				
+				//the QRecord has been incremented now. So to make the 'remove'
+				//operation fire, we will decrement the count to make it equal
+				//to the state saved in the inproc queue
+				redisTemplate.boundListOps(prepareInProcKey(key)).remove(-1, qr.getRedeliveryCount() > 0 ? qr.copyWithDecrCount() : qr);
+				if(enqueueAgain)
+				{
+					redisTemplate.boundListOps(key).rightPush(qr);
+				}
+				return operations.exec();
+			}
+			
+		});
+		//LREM count < 0: Remove elements equal to value moving from tail to head.
+		//since we are pushing from left, the item will be moving towards tail. this operation
+		//has a complexity of O(N), so we should try to minimize N
+		long c = (long) results.get(0);
+		if (c != 1) {
+			log.warn("Message was not removed from inproc on endCommit. count="+c);
+		}
 	}
 	/**
 	 * Enqueue item by head of the SOURCE queue from the destination, for message re-delivery.
 	 * @param qr
 	 * @param preparedKey
 	 */
-	public void reEnqueue(QRecord qr, String preparedKey) {
+	void reEnqueue0(QRecord qr, String preparedKey) {
 		BoundListOperations<String, QRecord> listOps = redisTemplate.boundListOps(preparedKey);
 		listOps.rightPush(qr);
 	}
@@ -180,6 +227,7 @@ public class RedisDataAccessor {
 	 * @param values
 	 */
 	public void enqueue(String preparedKey, QRecord...values) {
+		log.debug("enqueue: LPUSH "+preparedKey);
 		BoundListOperations<String, QRecord> listOps = redisTemplate.boundListOps(preparedKey);
 		listOps.leftPushAll(values);
 	}
@@ -220,7 +268,7 @@ public class RedisDataAccessor {
 	@Autowired
 	private BlazeRedisTemplate redisTemplate;
 	/**
-	 * Pop the next available item from SOURCE queue tail, and add it to a SINK queue head. This is
+	 * RPOP the next available item from SOURCE queue tail, and LPUSH it to a SINK queue head. This is
 	 * done to handle message delivery in case of failed attempts.
 	 * 
 	 * @see https://redis.io/commands/brpoplpush
@@ -231,15 +279,15 @@ public class RedisDataAccessor {
 	 * @return
 	 * @throws TimeoutException
 	 */
-	public QRecord dequeueReliable(String xchng, String route, long await, TimeUnit unit) throws TimeoutException
+	public QRecord dequeue(String xchng, String route, long await, TimeUnit unit) throws TimeoutException
 	{
 		log.debug(">>>>>>>>>> Start fetchHead <<<<<<<<< ");
 		log.debug("route -> " + route + "\tawait: " + await + " unit: " + unit);
 		String preparedKey = prepareListKey(xchng, route);
-		String inprocKey = prepareInProcKey(xchng, route);
+		String inprocKey = prepareInProcKey(preparedKey);
 		
+		log.debug("dequeue: RPOP "+preparedKey+" LPUSH "+inprocKey);
 		QRecord qr = redisTemplate.opsForList().rightPopAndLeftPush(preparedKey, inprocKey, await, unit);
-
 		if (qr != null) {
 			return qr;
 		}
@@ -247,13 +295,13 @@ public class RedisDataAccessor {
 
 	}
 	/**
-	 * Pop and return. This method should be used in message polling. For a reliable messaging,
-	 * like in consumer deliveries, {@link #dequeueReliable()} should be considered.
+	 * RPOP operation. This method should be used in message polling. For a reliable messaging,
+	 * like in consumer deliveries, {@link #dequeue()} should be considered.
 	 * @param xchng
 	 * @param route
 	 * @return dequeued item or null
 	 */
-	public QRecord dequeue(String xchng, String route, long await, TimeUnit unit)
+	public QRecord pop(String xchng, String route, long await, TimeUnit unit)
 	{
 		String preparedKey = prepareListKey(xchng, route);
 		return  redisTemplate.opsForList().rightPop(preparedKey, await, unit);
@@ -317,6 +365,61 @@ public class RedisDataAccessor {
 		redisTemplate.executePipelined(redisCallback);
 	}
 	/**
+	 * Clears a given queue using a MULTI RPOP iteration.
+	 * @param xchangeKey
+	 * @param routeKey
+	 * @return true if cleared
+	 */
+	public boolean clear(String xchangeKey, String routeKey)
+	{
+		final String listKey = prepareListKey(xchangeKey, routeKey);
+
+		List<Object> removed = clear0(listKey);
+		log.debug("Removed items: "+removed);
+		log.info("Removed items count: "+removed.size());
+		return sizeOf(listKey) == 0;
+	}
+	private List<Object> clear0(final String listKey)
+	{
+		return redisTemplate.execute(new SessionCallback<List<Object>>() {
+
+			@SuppressWarnings("unchecked")
+			@Override
+			public <K, V> List<Object> execute(RedisOperations<K,V> operations) throws DataAccessException {
+				try {
+					long llen = sizeOf(listKey);
+					if (llen > 0) {
+						ListOperations<K, V> ops = operations.opsForList();
+						operations.multi();
+						for (long l = 0; l < llen; l++) {
+							ops.rightPop((K) listKey);
+						}
+						return operations.exec();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+				
+				return Collections.emptyList();
+			}
+		});
+	}
+	/**
+	 * Clear the inproc queue
+	 * @param xchangeKey
+	 * @param routeKey
+	 * @return
+	 */
+	public boolean clearInproc(String xchangeKey, String routeKey)
+	{
+		final String listKey = prepareInProcKey(xchangeKey, routeKey);
+
+		List<Object> removed = clear0(listKey);
+		log.debug("Removed items: "+removed);
+		log.info("Removed items count: "+removed.size());
+		return sizeOf(listKey) == 0;
+	}
+	/**
 	 * Wrapper on {@linkplain RedisTemplate}.
 	 * @return
 	 */
@@ -334,15 +437,15 @@ public class RedisDataAccessor {
 	/**
 	 * Enqueue items from the recovery (inproc) queue. These items will be appended at tail
 	 * of the source queue. So it is possible to get a backdated item popped now. This method
-	 * is thus opposite to  the {@link #dequeue()} method in action. Hence the fancy name 'queuede'!
+	 * is thus opposite to  the {@link #dequeue()} method in action. 
 	 * @param xchng
 	 * @param route 
 	 * @return 
 	 */
-	public boolean queuede(String xchng, String route) {
+	public boolean reverseDequeue(String xchng, String route) {
 		String preparedKey = prepareListKey(xchng, route);
-		String inprocKey = prepareInProcKey(xchng, route);
-		
+		String inprocKey = prepareInProcKey(preparedKey);
+		log.info("reverseDequeue: RPOP "+inprocKey+" LPUSH "+preparedKey);
 		QRecord qr = redisTemplate.opsForList().rightPopAndLeftPush(inprocKey, preparedKey);
 		return qr != null;
 	}

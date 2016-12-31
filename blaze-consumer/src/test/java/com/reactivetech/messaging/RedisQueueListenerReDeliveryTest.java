@@ -25,21 +25,23 @@ import com.reactivetechnologies.mq.data.TextData;
 
 @RunWith(SpringJUnit4ClassRunner.class)
 @SpringBootTest(classes = {BlazeConsumer.class})
-public class RedisQueueListenerFluentTest2 {
+public class RedisQueueListenerReDeliveryTest {
 
 	@Autowired
 	QueueService service;
 	@Autowired
 	QueueContainer container;
 	
-	static final Logger log = LoggerFactory.getLogger(RedisQueueListenerFluentTest2.class);
-	static String QNAME = "QWITHREDELIVERY";
+	static final Logger log = LoggerFactory.getLogger(RedisQueueListenerReDeliveryTest.class);
+	static String QNAME = SimpleQueueListener.QNAME;
 	static String PAYLOAD = "Message9.0x";
 	@Before
 	public void publish()
 	{
 		service.clear(QNAME);
+		Assert.assertEquals(0, service.size(QNAME).intValue());
 		service.add(Arrays.asList(new TextData(PAYLOAD, QNAME)));
+		Assert.assertEquals(1, service.size(QNAME).intValue());
 	}
 	@After
 	public void checkDeadLettered()
@@ -53,7 +55,8 @@ public class RedisQueueListenerFluentTest2 {
 		
 		CountDownLatch l = new CountDownLatch(3);
 		QueueListener<TextData> abs = new QueueListenerBuilder()
-		.concurrency(4)
+		.concurrency(1)
+		//.maxDelivery((short) 3)
 		.consumer(new Consumer<TextData>() {
 
 			@Override

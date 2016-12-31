@@ -18,10 +18,10 @@ package com.reactivetechnologies.blaze.core;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 
 import com.reactivetechnologies.blaze.handlers.ConsumerRecoveryHandler;
 import com.reactivetechnologies.blaze.ops.RedisDataAccessor;
-//TODO
 public class DefaultConsumerRecoveryHandler implements ConsumerRecoveryHandler {
 	/**
 	 * 
@@ -33,32 +33,50 @@ public class DefaultConsumerRecoveryHandler implements ConsumerRecoveryHandler {
 	
 	@Autowired
 	private RedisDataAccessor redisOps;
+	
 	private static final Logger log = LoggerFactory.getLogger(DefaultConsumerRecoveryHandler.class);
 	
-	private long rpopInprocNlpushSource(String route, String exchange)
+	private long reverseDequeue(String route, String exchange)
 	{
 		long count = 0;
 		boolean did = false;
 		do {
 			count++;
-			did = redisOps.queuede(exchange, route);
+			did = redisOps.reverseDequeue(exchange, route);
 		} while (did);
 		return count;
+	}
+	@Value("${consumer.recovery.enable:true}")
+	private boolean recoveryEnabled;
+	private void recoverMessages(String exchange, String route, long size)
+	{
+		log.info("Will recover pending "+size+" items for re-enqueue");
+		long count = reverseDequeue(route, exchange);
+		
+		if(count != size)
+		{
+			log.warn("Expected to process "+size+" items, but found "+count);
+		}
+	}
+	private void removeMessages(String exchange, String route, long size)
+	{
+		log.info("Will remove pending "+size+" items");
+		redisOps.clearInproc(exchange, route);
+		
 	}
 	private void recoverIfPresent(String exchange, String route)
 	{
 		String listKey = redisOps.prepareInProcKey(exchange, route);
+		log.info("INPROC key: "+listKey);
+		
 		long size = redisOps.sizeOf(listKey);
 		
 		if(size > 0)
 		{
-			log.info("Will recover "+size+" items for re-enqueue");
-			long count = rpopInprocNlpushSource(route, exchange);
-			
-			if(count != size)
-			{
-				log.warn("Expected to process "+size+" items, but found "+count);
-			}
+			if(recoveryEnabled)
+				recoverMessages(exchange, route, size);
+			else
+				removeMessages(exchange, route, size);
 		}
 	}
 	@Override
