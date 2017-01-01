@@ -75,7 +75,7 @@ public interface QueueService {
 	 * @param q
 	 * @return
 	 */
-	Integer size(String routeKey);
+	long size(String routeKey);
 
 	/**
 	 * Queue backlog for given exchange/routing key
@@ -83,7 +83,7 @@ public interface QueueService {
 	 * @param q
 	 * @return
 	 */
-	Integer size(String xchangeKey, String routeKey);
+	long size(String xchangeKey, String routeKey);
 	
 	/**
 	 * Clears backlog for given routing key in default exchange

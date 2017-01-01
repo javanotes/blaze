@@ -32,7 +32,7 @@ public class RedisQueueListenerFluentTest {
 	@Test
 	public void pollFromQueue()
 	{
-		int n = service.size(SimpleQueueListener.QNAME);
+		int n = (int) service.size(SimpleQueueListener.QNAME);
 		final CountDownLatch l = new CountDownLatch(n);
 		log.info("MESSAGE TO FETCH => "+n);
 		QueueListener<TextData> abs = new QueueListenerBuilder()

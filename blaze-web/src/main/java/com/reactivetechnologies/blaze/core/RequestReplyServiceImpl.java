@@ -28,7 +28,7 @@ import com.reactivetechnologies.mq.RequestReplyAble;
 /**
  * Synchronous operations involving a request and reply queue.
  * @author esutdal
- *
+ * TODO: WIP
  */
 public class RequestReplyServiceImpl implements RequestReplyAble {
 	/**

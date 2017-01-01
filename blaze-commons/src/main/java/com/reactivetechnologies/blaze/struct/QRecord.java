@@ -21,7 +21,12 @@ public class QRecord implements Serializable{
 	public QRecord(){
 		setKey(new QKey());
 	}
-	public QRecord copyWithDecrCount()
+	/**
+	 * Return a copied instance with decremented delivery count. This method is needed to get a 'previous state'
+	 * of an incremental {@linkplain QRecord}.
+	 * @return
+	 */
+	public QRecord decrDeliveryCount()
 	{
 		QRecord copy = new QRecord(this);
 		copy.setRedeliveryCount((short) (this.getRedeliveryCount()-1));

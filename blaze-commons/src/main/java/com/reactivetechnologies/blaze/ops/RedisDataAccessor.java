@@ -149,8 +149,10 @@ public class RedisDataAccessor {
 	 * with complexity of O(n).
 	 * @param qr
 	 * @param key
+	 * @deprecated
 	 */
-	void endCommit0(QRecord qr, String key) {
+	@SuppressWarnings("unused")
+	private void endCommit0(QRecord qr, String key) {
 		BoundListOperations<String, QRecord> listOps = redisTemplate.boundListOps(prepareInProcKey(key));
 		//LREM count < 0: Remove elements equal to value moving from tail to head.
 		//since we are pushing from left, the item will be moving towards tail. this operation
@@ -182,10 +184,17 @@ public class RedisDataAccessor {
 				//the QRecord has been incremented now. So to make the 'remove'
 				//operation fire, we will decrement the count to make it equal
 				//to the state saved in the inproc queue
-				redisTemplate.boundListOps(prepareInProcKey(key)).remove(-1, qr.getRedeliveryCount() > 0 ? qr.copyWithDecrCount() : qr);
+				redisTemplate.boundListOps(prepareInProcKey(key)).remove(-1,
+						qr.getRedeliveryCount() > 0 ? qr.decrDeliveryCount() : qr);
+				
 				if(enqueueAgain)
 				{
 					redisTemplate.boundListOps(key).rightPush(qr);
+				}
+				else
+				{
+					//dequeue is complete now
+					statsRecorder.recordDequeu(key);
 				}
 				return operations.exec();
 			}
@@ -203,8 +212,10 @@ public class RedisDataAccessor {
 	 * Enqueue item by head of the SOURCE queue from the destination, for message re-delivery.
 	 * @param qr
 	 * @param preparedKey
+	 * @deprecated
 	 */
-	void reEnqueue0(QRecord qr, String preparedKey) {
+	@SuppressWarnings("unused")
+	private void reEnqueue0(QRecord qr, String preparedKey) {
 		BoundListOperations<String, QRecord> listOps = redisTemplate.boundListOps(preparedKey);
 		listOps.rightPush(qr);
 	}
@@ -229,7 +240,8 @@ public class RedisDataAccessor {
 	public void enqueue(String preparedKey, QRecord...values) {
 		log.debug("enqueue: LPUSH "+preparedKey);
 		BoundListOperations<String, QRecord> listOps = redisTemplate.boundListOps(preparedKey);
-		listOps.leftPushAll(values);
+		long c= listOps.leftPushAll(values);
+		statsRecorder.recordEnqueu(preparedKey, c);
 	}
 	//NOTE: Redis keys are data structure specific. So you cannot use the same key for hash and list.
 	/**
@@ -267,6 +279,8 @@ public class RedisDataAccessor {
 	private StringRedisTemplate stringRedis;
 	@Autowired
 	private BlazeRedisTemplate redisTemplate;
+	@Autowired
+	private RedisStatsRecorder statsRecorder;
 	/**
 	 * RPOP the next available item from SOURCE queue tail, and LPUSH it to a SINK queue head. This is
 	 * done to handle message delivery in case of failed attempts.
@@ -304,7 +318,12 @@ public class RedisDataAccessor {
 	public QRecord pop(String xchng, String route, long await, TimeUnit unit)
 	{
 		String preparedKey = prepareListKey(xchng, route);
-		return  redisTemplate.opsForList().rightPop(preparedKey, await, unit);
+		QRecord qr =  redisTemplate.opsForList().rightPop(preparedKey, await, unit);
+		if(qr != null)
+		{
+			statsRecorder.recordDequeu(preparedKey);
+		}
+		return qr;
 		
 	}
 	/**

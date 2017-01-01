@@ -44,7 +44,7 @@ public class RedisQueueListenerRecoveryTest {
 	@After
 	public void checkDeadLettered()
 	{
-		int llen = service.size(QNAME);
+		long llen = service.size(QNAME);
 		Assert.assertEquals(0, llen);
 	}
 	@Test

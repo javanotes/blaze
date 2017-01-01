@@ -39,14 +39,14 @@ public class RedisQueueListenerReDeliveryTest {
 	public void publish()
 	{
 		service.clear(QNAME);
-		Assert.assertEquals(0, service.size(QNAME).intValue());
+		Assert.assertEquals(0, service.size(QNAME));
 		service.add(Arrays.asList(new TextData(PAYLOAD, QNAME)));
-		Assert.assertEquals(1, service.size(QNAME).intValue());
+		Assert.assertEquals(1, service.size(QNAME));
 	}
 	@After
 	public void checkDeadLettered()
 	{
-		int llen = service.size(QNAME);
+		long llen = service.size(QNAME);
 		Assert.assertEquals(0, llen);
 	}
 	@Test

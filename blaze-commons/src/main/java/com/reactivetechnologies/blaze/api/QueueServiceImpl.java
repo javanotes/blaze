@@ -15,21 +15,25 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 import com.reactivetechnologies.blaze.ops.RedisDataAccessor;
+import com.reactivetechnologies.blaze.ops.RedisStatsRecorder;
 import com.reactivetechnologies.blaze.struct.QRecord;
 import com.reactivetechnologies.mq.Data;
+import com.reactivetechnologies.mq.MetricService;
 import com.reactivetechnologies.mq.QueueService;
 
 @Service
 @Qualifier("RMQ")
-public class QueueServiceImpl implements QueueService{
+public class QueueServiceImpl implements QueueService, MetricService{
 
 	private static final Logger log = LoggerFactory.getLogger(QueueServiceImpl.class);
 	
 	@Autowired
 	private RedisDataAccessor redisOps;
+	@Autowired
+	private RedisStatsRecorder metrics;
 	
 	@Override
-	public Integer size(String q) {
+	public long size(String q) {
 		return size(QueueService.DEFAULT_XCHANGE, q);
 	}
 
@@ -88,9 +92,9 @@ public class QueueServiceImpl implements QueueService{
 		return redisOps.boundListOps(prepareKey(xchangeKey, routeKey));
 	}
 	@Override
-	public Integer size(String xchangeKey, String routeKey) {
+	public long size(String xchangeKey, String routeKey) {
 		BoundListOperations<String, QRecord> listOps = listOperations(xchangeKey, routeKey);
-		return listOps.size().intValue();
+		return listOps.size().longValue();
 	}
 
 	public static final int MAX_COMPARE_ON_CLEAR = 5;
@@ -134,6 +138,36 @@ public class QueueServiceImpl implements QueueService{
 	@Override
 	public QRecord getNext(String xchng, String route, long timeout, TimeUnit unit) {
 		return redisOps.pop(xchng, route, timeout, unit);
+	}
+
+	@Override
+	public long getDequeueCount(String exchange, String route) {
+		return metrics.getDequeuStats(prepareKey(exchange, route));
+	}
+
+	@Override
+	public long getEnqueueCount(String exchange, String route) {
+		return metrics.getEnqueuStats(prepareKey(exchange, route));
+	}
+
+	@Override
+	public void resetCounts(String exchange, String route) {
+		metrics.reset(prepareKey(exchange, route));
+	}
+
+	@Override
+	public long getDequeueCount(String route) {
+		return getDequeueCount(DEFAULT_XCHANGE, route);
+	}
+
+	@Override
+	public long getEnqueueCount(String route) {
+		return getEnqueueCount(DEFAULT_XCHANGE, route);
+	}
+
+	@Override
+	public void resetCounts(String route) {
+		resetCounts(DEFAULT_XCHANGE, route);
 	}
 
 }
