@@ -79,7 +79,7 @@ public abstract class AbstractQueueListener<T extends Data> implements QueueList
 	}
 	/**
 	 * Return false if a dedicated thread pool is requested for this consumer. When using a
-	 * dedicated pool, the worker thread is not configurable. It will kept equal to the number of cores available.
+	 * dedicated pool, the worker thread is not configurable. It will be kept equal to the number of cores available.
 	 * The consumer concurrency however, can always be configured. This is done to limit the number of threads created
 	 * with an application creating arbitrary number of consumers. 
 	 * @return Whether to use the shared pool. Default true.

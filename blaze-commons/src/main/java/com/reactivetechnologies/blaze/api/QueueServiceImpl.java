@@ -49,9 +49,9 @@ public class QueueServiceImpl implements QueueService, MetricService{
 		return add0(msg, exchangeKey, msg.get(0).getDestination(), true);
 	}
 
-	private static String prepareKey(String xchangeKey, String routeKey)
+	private String prepareKey(String xchangeKey, String routeKey)
 	{
-		return RedisDataAccessor.prepareListKey(xchangeKey, routeKey);
+		return redisOps.prepareListKey(xchangeKey, routeKey);
 	}
 	
 	private static QRecord dataToRecord(Data t, String xchangeKey, String routeKey)

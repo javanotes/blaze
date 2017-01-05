@@ -27,7 +27,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class RedisStatsRecorder {
 
-	static final String HASH_SUFFIX = "$HASH";
+	
 	static final String STATS_ENQ = "STATS_ENQ";
 	static final String STATS_DEQ = "STATS_DEQ";
 	static final String STATS_LEN = "STATS_LEN";
@@ -36,7 +36,7 @@ public class RedisStatsRecorder {
 	
 	private static String hashKey(String key)
 	{
-		return key + HASH_SUFFIX;
+		return key + RedisDataAccessor.STATS_SUFFIX;
 	}
 	
 	public void recordEnqueu(String key)

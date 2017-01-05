@@ -1,14 +1,12 @@
 package com.reactivetechnologies.blaze.core;
 
 import java.util.concurrent.RecursiveAction;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.reactivetechnologies.blaze.struct.QRecord;
-import com.reactivetechnologies.blaze.throttle.ConsumerThrottler;
 import com.reactivetechnologies.mq.Data;
 import com.reactivetechnologies.mq.common.BlazeInternalError;
 import com.reactivetechnologies.mq.common.BlazeMessagingException;
@@ -26,22 +24,16 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 	private final int concurrency;
 	private final AbstractQueueListener<T> consumer;
 	private final QueueContainerImpl container;
-	private final ConsumerThrottler throttler;
-	private int throttleTps;
-	public int getThrottleTps() {
-		return throttleTps;
-	}
-	public void setThrottleTps(int throttleTps) {
-		this.throttleTps = throttleTps;
-	}
+	private final BlazeQueueIterator queueIterator;
+	
 	/**
 	 * Instantiates a new task with concurrency level as set in the consumer. This constructor is kept
 	 * public to schedule the first shot of task from the container.
 	 * @param <T>
 	 * @param ql
 	 */
-	public QueueContainerTaskImpl(AbstractQueueListener<T> ql, QueueContainerImpl container, ConsumerThrottler throttler) {
-		this(ql, ql.concurrency(), container, throttler);
+	public QueueContainerTaskImpl(AbstractQueueListener<T> ql, QueueContainerImpl container, BlazeQueueIterator headPopper) {
+		this(ql, ql.concurrency(), container, headPopper);
 	}
 	/**
 	 * Fork new parallel tasks to be scheduled in a work stealing pool. This constructor will be invoked from within
@@ -49,11 +41,11 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 	 * @param ql
 	 * @param concurrency
 	 */
-	private QueueContainerTaskImpl(AbstractQueueListener<T> ql, int concurrency, QueueContainerImpl container, ConsumerThrottler throttler) {
+	private QueueContainerTaskImpl(AbstractQueueListener<T> ql, int concurrency, QueueContainerImpl container, BlazeQueueIterator headPopper) {
 		this.concurrency = concurrency;
 		this.consumer = ql;
 		this.container = container;
-		this.throttler = throttler;
+		this.queueIterator = headPopper;
 	}
 	
 	/**
@@ -76,8 +68,7 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 	}
 	private QueueContainerTaskImpl<T> copy()
 	{
-		QueueContainerTaskImpl<T> b = new QueueContainerTaskImpl<T>(consumer, 1, container, throttler);
-		b.setThrottleTps(this.throttleTps);
+		QueueContainerTaskImpl<T> b = new QueueContainerTaskImpl<T>(consumer, 1, container, queueIterator);
 		return b;
 	}
 	/**
@@ -110,6 +101,14 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 			handleException(qr, e);
 			
 		}
+	}
+	protected void fireOnThrottled() {
+		// noop
+		
+	}
+	protected void fireOnTimeout() {
+		// noop
+		
 	}
 	private void discardMessage(QRecord qr, Throwable e)
 	{
@@ -188,12 +187,13 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 			} 
 			 
 		}
-		catch (TimeoutException t) {
-			log.debug(t+"");
+		catch (TimeoutException t) 
+		{
+			fireOnTimeout();
 		} 
 		catch (MessageThrottledException e) 
 		{
-			//log.debug(e+"");
+			fireOnThrottled();
 		}
 		catch(Exception e)
 		{
@@ -206,26 +206,21 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 			forkTasks(1);//fork next corresponding task
 		}
 	}
+	
 	/* (non-Javadoc)
 	 * @see com.reactivetech.messaging.cmq.core.QueueContainerTask#fetchHead()
 	 */
 	@Override
 	public QRecord fetchHead() throws TimeoutException, MessageThrottledException
 	{
-		return fetchHeadIfNotThrottled();
-	}
-	
-	private QRecord fetchHeadIfNotThrottled() throws TimeoutException, MessageThrottledException {
-		if(throttler.allowMessageConsume(throttleTps))
+		if(queueIterator.hasNext())
 		{
-			log.debug("Allowed fetching head");
-			QRecord qr = container.fetchHead(consumer.exchange(), consumer.routing(),
-					container.getPollInterval(), TimeUnit.MILLISECONDS);
-			log.debug("Incrementing count");
-			throttler.incrementCount();
-			log.debug("Returning..");
+			QRecord qr = queueIterator.next();
+			if(qr == null)
+				throw new TimeoutException();
 			return qr;
 		}
 		throw new MessageThrottledException();
 	}
+	
 }

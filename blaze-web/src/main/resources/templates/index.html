@@ -1,0 +1,154 @@
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<title>Blaze - Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</meta>
+<!-- Bootstrap -->
+<link href="webjars/bootstrap/3.3.4/css/bootstrap.min.css"
+	rel="stylesheet"
+	th:href="@{/webjars/bootstrap/3.3.4/css/bootstrap.min.css}"
+	media="screen" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.97.5/css/materialize.min.css" />
+</head>
+<!-- <nav class="navbar navbar-default">
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <a class="navbar-brand" href="#">
+        <img alt="Brand" src="..." th:src="@{/images/logo.png}"/>
+      </a>
+    </div>
+  </div>
+</nav> -->
+
+<nav>
+	<div class="nav-wrapper white">
+		<a href="#" class="brand-logo"><img
+			src="http://www.vectortemplates.com/raster/batman/batman-logo-big.gif" th:src="@{/images/logo.png}"
+			id="logo" /></a>
+		
+	</div>
+</nav>
+
+<body class="skin-blue">
+	<script src="http://code.jquery.com/jquery.js"></script>
+	<script src="webjars/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+	<div class="container">
+		<div class="row">
+
+
+			<div class="col-md-12">
+				<div class="table-responsive">
+
+					<table id="mytable" class="table table-bordred table-striped">
+
+						<thead>
+
+							<th>Queue</th>
+							<th>Backlog</th>
+							<th>Enqueued</th>
+							<th>Dequeued</th>
+							<th>Consumers</th>
+							<th>Reset</th>
+							<th>Clear</th>
+
+						</thead>
+						<tbody>
+
+							<tr>
+								<td>PROJECT_IMPORTS_REJECTED</td>
+								<td>0</td>
+								<td>1000</td>
+								<td>1000</td>
+								<td>1</td>
+								<td><p data-placement="top" data-toggle="tooltip"
+										title="Edit">
+										<button class="btn btn-primary btn-xs" data-title="Edit"
+											data-toggle="modal" data-target="#edit">
+											<span class="glyphicon glyphicon-repeat"></span>
+										</button>
+									</p></td>
+								<td><p data-placement="top" data-toggle="tooltip"
+										title="Delete">
+										<button class="btn btn-primary btn-xs" data-title="Delete"
+											data-toggle="modal" data-target="#delete">
+											<span class="glyphicon glyphicon-trash"></span>
+										</button>
+									</p></td>
+							</tr>
+							
+							<tr>
+								<td>PROJECT_IMPORTS_REJECTED</td>
+								<td>0</td>
+								<td>1000</td>
+								<td>1000</td>
+								<td>1</td>
+								<td><p data-placement="top" data-toggle="tooltip"
+										title="Edit">
+										<button class="btn btn-primary btn-xs" data-title="Edit"
+											data-toggle="modal" data-target="#edit">
+											<span class="glyphicon glyphicon-repeat"></span>
+										</button>
+									</p></td>
+								<td><p data-placement="top" data-toggle="tooltip"
+										title="Delete">
+										<button class="btn btn-primary btn-xs" data-title="Delete"
+											data-toggle="modal" data-target="#delete">
+											<span class="glyphicon glyphicon-trash"></span>
+										</button>
+									</p></td>
+							</tr>
+							
+							<tr>
+								<td>PROJECT_IMPORTS_REJECTED</td>
+								<td>0</td>
+								<td>1000</td>
+								<td>1000</td>
+								<td>1</td>
+								<td><p data-placement="top" data-toggle="tooltip"
+										title="Edit">
+										<button class="btn btn-primary btn-xs" data-title="Edit"
+											data-toggle="modal" data-target="#edit">
+											<span class="glyphicon glyphicon-repeat"></span>
+										</button>
+									</p></td>
+								<td><p data-placement="top" data-toggle="tooltip"
+										title="Delete">
+										<button class="btn btn-primary btn-xs" data-title="Delete"
+											data-toggle="modal" data-target="#delete">
+											<span class="glyphicon glyphicon-trash"></span>
+										</button>
+									</p></td>
+							</tr>
+							
+							<tr>
+								<td>PROJECT_IMPORTS_REJECTED</td>
+								<td>0</td>
+								<td>1000</td>
+								<td>1000</td>
+								<td>1</td>
+								<td><p data-placement="top" data-toggle="tooltip"
+										title="Edit">
+										<button class="btn btn-primary btn-xs" data-title="Edit"
+											data-toggle="modal" data-target="#edit">
+											<span class="glyphicon glyphicon-repeat"></span>
+										</button>
+									</p></td>
+								<td><p data-placement="top" data-toggle="tooltip"
+										title="Delete">
+										<button class="btn btn-primary btn-xs" data-title="Delete"
+											data-toggle="modal" data-target="#delete">
+											<span class="glyphicon glyphicon-trash"></span>
+										</button>
+									</p></td>
+							</tr>
+
+							
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+
+</html>

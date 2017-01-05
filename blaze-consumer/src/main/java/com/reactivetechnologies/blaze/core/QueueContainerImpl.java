@@ -11,7 +11,6 @@ import java.util.concurrent.ForkJoinPool.ForkJoinWorkerThreadFactory;
 import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
@@ -64,7 +63,7 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 		        ForkJoinWorkerThread t = new ForkJoinWorkerThread(pool){
 		          
 		        };
-		        t.setName(name+"-Worker-"+(containerThreadCount ++));
+		        t.setName(name+".Worker."+(containerThreadCount ++));
 		        return t;
 		      }
 		    }, new UncaughtExceptionHandler() {
@@ -90,7 +89,7 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 			int n=1;
 			@Override
 			public Thread newThread(Runnable arg0) {
-				Thread t = new Thread(arg0, "container-async-thread-"+(n++));
+				Thread t = new Thread(arg0, "BlazeContainerTask."+(n++));
 				return t;
 			}
 		});
@@ -122,6 +121,7 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 		{
 			l.destroy();
 			log.info("["+l.identifier()+"] consumer destroyed");
+			recordToStats(l, false);
 		}
 		log.info("Container stopped..");
 	}
@@ -144,7 +144,13 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 	{
 		listeners.add(aListener);
 		run(aListener);
+		recordToStats(aListener, true);
 	}
+	private <T extends Data> void recordToStats(AbstractQueueListener<T> aListener, boolean isRegistered) {
+		// TODO Auto-generated method stub
+		
+	}
+
 	/* (non-Javadoc)
 	 * @see com.reactivetech.messaging.cmq.core.IQueueListenerContainer#run()
 	 */
@@ -179,6 +185,51 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 		recoveryHdlr.handle(exchange, routing);
 	}
 
+	private BlazeQueueIterator newQueueIterator(AbstractQueueListener<? extends Data> task) throws Exception
+	{
+		BlazeQueueIterator iter = new BlazeQueueIterator(throttlerFactory.getObject(throttlerPeriod, enabled), throttleTps, redisOps);
+		iter.setExchange(task.exchange());
+		iter.setRouting(task.routing());
+		iter.setPollIntervalMillis(getPollInterval());
+		
+		return iter;
+	}
+	private QueueContainerTaskImpl<? extends Data> prepareTask(AbstractQueueListener<? extends Data> task) throws Exception
+	{
+		BlazeQueueIterator iter = newQueueIterator(task);
+		QueueContainerTaskImpl<? extends Data> runnable = new QueueContainerTaskImpl<>(task, this, iter);
+		
+		return runnable;
+	}
+	/**
+	 * This will create dedicated fork-join pools for each consumer.
+	 * @param task
+	 * @param runnable
+	 */
+	private void executeInNewPool(AbstractQueueListener<? extends Data> task, QueueContainerTaskImpl<? extends Data> runnable)
+	{
+		//CAVEAT: On a test laptop with 4 core processors, it was found that multiple fork-join pools in the same jvm
+		//is not a good idea and the work stealing approach did not scale in this case. Worst still, it was
+		//found that threads across pool instances were getting starved, and not getting a chance to run at all!
+		//This is why the default mode is to use a shared pool, and from application perspective we would suggest
+		//to consider the framework as a lightweight micro-container for single consumer per jvm.
+		
+		String name = task.identifier().length() > 20 ? task.identifier().substring(0, 20) : task.identifier();
+		ForkJoinPool pool = newFJPool(Runtime.getRuntime().availableProcessors(), name);
+		pool.execute(runnable);
+		threadPools.add(pool);
+	}
+	private void execute(AbstractQueueListener<? extends Data> task) throws Exception
+	{
+		QueueContainerTaskImpl<? extends Data> runnable = prepareTask(task);
+		log.debug("SUBMITTING TASK FOR ------------------- "+task);
+		if(task.useSharedPool())
+			((ForkJoinPool) threadPool).execute(runnable);
+		else
+		{
+			executeInNewPool(task, runnable);
+		}
+	}
 	//Consider pool per listener? ForkJoinPool doesn't seem to be efficient 
 	//in multiple listener environment. Can there be scenario for a listener
 	//starvation?
@@ -196,18 +247,8 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 				{
 					log.info("Consumer "+task.identifier() + " to be throttled @TPS "+throttleTps);
 				}
-				QueueContainerTaskImpl<? extends Data> runnable = new QueueContainerTaskImpl<>(task, this, throttlerFactory.getObject(throttlerPeriod, enabled));
-				runnable.setThrottleTps(throttleTps);
-				log.debug("SUBMITTING TASK FOR ------------------- "+task);
-				if(task.useSharedPool())
-					((ForkJoinPool) threadPool).execute(runnable);
-				else
-				{
-					String name = task.identifier().length() > 20 ? task.identifier().substring(0, 20) : task.identifier();
-					ForkJoinPool pool = newFJPool(Runtime.getRuntime().availableProcessors(), name);
-					pool.execute(runnable);
-					threadPools.add(pool);
-				}
+
+				execute(task);
 				
 			} 
 			catch (Exception e) {
@@ -221,29 +262,28 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 	 */
 	@Override
 	public void commit(QRecord qr, boolean success) {
-		String preparedKey = RedisDataAccessor.prepareListKey(qr.getKey().getExchange(), qr.getKey().getRoutingKey());
-		//this can be made async
-		asyncTasks.submit(new Runnable() {
-			@Override
-			public void run() {
-				//redisOps.endCommit(qr, preparedKey);
-				redisOps.endCommit(qr, preparedKey, false);
-			}
-		});
-		
+		String preparedKey = redisOps.prepareListKey(qr.getKey().getExchange(), qr.getKey().getRoutingKey());
+		redisOps.endCommit(qr, preparedKey, false);
 		if(!success)
 		{
-			//message being lost
-			recordDeadLetter(qr);
+			asyncTasks.submit(new Runnable() {
+				
+				@Override
+				public void run() {
+					//message being lost
+					recordDeadLetter(qr);
+				}
+			});
+			
 		}
 	}
 	@Autowired
 	private DeadLetterHandler deadLetterService;
 	/**
-	 * TODO: Handle messages discarded after retry limit exceeded or expiration or unknown cause.
+	 * Handle messages discarded after retry limit exceeded or expiration or unknown cause.
 	 * @param qr
 	 */
-	protected void recordDeadLetter(QRecord qr) {
+	private void recordDeadLetter(QRecord qr) {
 		deadLetterService.handle(qr);
 	}
 	/* (non-Javadoc)
@@ -251,7 +291,7 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 	 */
 	@Override
 	public void rollback(QRecord qr) {
-		String preparedKey = RedisDataAccessor.prepareListKey(qr.getKey().getExchange(), qr.getKey().getRoutingKey());
+		String preparedKey = redisOps.prepareListKey(qr.getKey().getExchange(), qr.getKey().getRoutingKey());
 		//redisOps.endCommit(qr, preparedKey);
 		//redisOps.reEnqueue(qr, preparedKey);
 		redisOps.endCommit(qr, preparedKey, true);
@@ -275,18 +315,5 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 	public void setPollInterval(long pollInterval) {
 		this.pollInterval = pollInterval;
 	}
-	/**
-	 * Fetch head.
-	 * @param exchange
-	 * @param routing
-	 * @param pollInterval2
-	 * @param milliseconds
-	 * @return
-	 * @throws TimeoutException
-	 */
-	QRecord fetchHead(String exchange, String routing, long pollInterval2, TimeUnit milliseconds) throws TimeoutException
-	{
-		QRecord qr = redisOps.dequeue(exchange, routing, pollInterval2, milliseconds);
-		return qr;
-	}
+	
 }

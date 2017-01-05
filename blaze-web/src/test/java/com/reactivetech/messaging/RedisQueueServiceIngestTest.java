@@ -25,7 +25,7 @@ public class RedisQueueServiceIngestTest {
 	QueueService service;
 	@Autowired
 	MetricService metrics;
-	private final int iteration = 100;
+	private final int iteration = 100000;
 	
 	@Before
 	public void pre()
