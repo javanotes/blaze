@@ -41,7 +41,7 @@ import com.reactivetechnologies.blaze.struct.QRecord;
 import com.reactivetechnologies.mq.Data;
 import com.reactivetechnologies.mq.DataSerializable;
 import com.reactivetechnologies.mq.QueueService;
-import com.reactivetechnologies.mq.common.BlazeInternalError;
+import com.reactivetechnologies.mq.common.BlazeInternalException;
 import com.reactivetechnologies.mq.common.BlazeMessagingException;
 import com.reactivetechnologies.mq.container.QueueContainer;
 
@@ -193,7 +193,7 @@ public abstract class AbstractQueueListener<T extends Data> implements QueueList
 				throw ce;
 			}
 		} catch (InstantiationException | IllegalAccessException | IOException e) {
-			throw new BlazeInternalError("Fatal error", e);
+			throw new BlazeInternalException("Fatal error", e);
 		}
 	}
 	/**

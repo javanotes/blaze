@@ -13,26 +13,30 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 import com.reactivetechnologies.blaze.BlazeConsumer;
-import com.reactivetechnologies.mq.QueueService;
+import com.reactivetechnologies.blaze.ops.ConsumerDataAccessor;
 import com.reactivetechnologies.mq.consume.Consumer;
 import com.reactivetechnologies.mq.consume.QueueListener;
 import com.reactivetechnologies.mq.consume.QueueListenerBuilder;
 import com.reactivetechnologies.mq.container.QueueContainer;
 import com.reactivetechnologies.mq.data.TextData;
+import com.reactivetechnologies.mq.ops.ConsumerOperations;
 
 @RunWith(SpringJUnit4ClassRunner.class)
 @SpringBootTest(classes = {BlazeConsumer.class})
 public class RedisQueueListenerFluentTest {
 
 	@Autowired
-	QueueService service;
+	ConsumerDataAccessor service;
 	@Autowired
 	QueueContainer container;
+	
+	//static String queueDest = "TEXT-QUEUE";
+	static String queueDest = SimpleQueueListener.QNAME;
 	static final Logger log = LoggerFactory.getLogger(RedisQueueListenerFluentTest.class);
 	@Test
 	public void pollFromQueue()
 	{
-		int n = (int) service.size(SimpleQueueListener.QNAME);
+		int n =  (int) service.size(queueDest);
 		final CountDownLatch l = new CountDownLatch(n);
 		log.info("MESSAGE TO FETCH => "+n);
 		QueueListener<TextData> abs = new QueueListenerBuilder()
@@ -58,7 +62,7 @@ public class RedisQueueListenerFluentTest {
 				log.info("RedisQueueListenerFluentTest.pollFromQueue().new Consumer() {...}.init()");
 			}
 		})
-		.route(SimpleQueueListener.QNAME)
+		.route(queueDest)
 		.dataType(TextData.class)
 		.build();
 		

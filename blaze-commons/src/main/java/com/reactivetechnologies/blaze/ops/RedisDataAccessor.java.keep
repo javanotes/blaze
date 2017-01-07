@@ -15,15 +15,18 @@
  */
 package com.reactivetechnologies.blaze.ops;
 
-import java.util.Arrays;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
@@ -31,7 +34,12 @@ import javax.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.Cache;
+import org.springframework.cache.Cache.ValueWrapper;
+import org.springframework.cache.CacheManager;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.BoundListOperations;
 import org.springframework.data.redis.core.ListOperations;
@@ -41,24 +49,81 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import com.reactivetechnologies.blaze.struct.QRecord;
+import com.reactivetechnologies.mq.ops.CacheOperations;
+import com.reactivetechnologies.mq.ops.ConsumerOperations;
+import com.reactivetechnologies.mq.ops.ProducerOperations;
 
-@Component
-public class RedisDataAccessor {
+/**
+ * @deprecated Use {@linkplain ProducerDataAccessor} 
+ * @author esutdal
+ *
+ */
+//@Component
+class RedisDataAccessor2 implements CacheOperations, ProducerOperations, ConsumerOperations {
 
-	private static final String RPOPLPUSH_DESTN_SUFFIX = "$INPROC";
-	static final String RPOPLPUSH_DESTN_SET = RPOPLPUSH_DESTN_SUFFIX + "-SET";
+	static final String RPOPLPUSH_DESTN_SUFFIX = "$INPROC";
+	public static final String RPOPLPUSH_DESTN_SET = RPOPLPUSH_DESTN_SUFFIX + "-SET";
 	public static final String QUEUE_PREFIX = "queues/";
 	public static final String QUEUE_PREFIX_PATTERN = QUEUE_PREFIX+"*";
 	public static final String STATS_SUFFIX = "$STAT";
 	static final String LIST_KEY_JOIN_SEPARATOR = "-";
 	static final String INPROC_KEY_JOIN_SEPARATOR = ".";
 	
+	@Value("${producer.connChecker.period.millis:5000}")
+	private long connCheckPeriodMillis = 5;
 	@Autowired
 	private InstanceInitializationService instanceService;
-	static final Logger log = LoggerFactory.getLogger(RedisDataAccessor.class);
+	private static final Logger log = LoggerFactory.getLogger(RedisDataAccessor.class);
+	
+	/**
+	 * 
+	 * @author esutdal
+	 *
+	 */
+	private final class ConnectionCheckerTask implements Runnable
+	{
+		private ScheduledExecutorService connChecker;
+		private long period = 5;
+		private TimeUnit unit = TimeUnit.MILLISECONDS;
+		public ConnectionCheckerTask() {
+			connChecker = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+				
+				@Override
+				public Thread newThread(Runnable arg0) {
+					Thread t = new Thread(arg0, "Blaze.ConnectionChecker");
+					t.setDaemon(true);
+					return t;
+				}
+			});
+			log.info("Initiated new connection checker task..");
+		}
+		@Override
+		public void run() {
+			if(isRedisAvailable())
+			{
+				log.info("Redis is up and available now. Running initializations..");
+				doInit();
+				connChecker.shutdown();
+			}
+			else
+			{
+				log.warn("Scheduling next connection check run");
+				scheduleNextRun();
+			}
+		}
+		private void scheduleNextRun()
+		{
+			connChecker.schedule(this, period, unit);
+		}
+	}
+	
+	
 	/*
 	 * Note: On inspecting the Spring template bound*Ops() in Spring code, 
 	 * they seem to be plain wrapper classes exposing a subset of operations (restrictive decorator?), 
@@ -71,10 +136,56 @@ public class RedisDataAccessor {
 	@PostConstruct
 	private void init()
 	{
+		
+		if(isRedisAvailable())
+		{
+			log.info("Verified Redis is available..");
+			localData = localDataFactory.getObject();
+			doInit();
+		}
+		else
+		{
+			scheduleConnectionCheck();
+		}
+	}
+	private void moveLocal() {
+		localData.moveAll(this);
+		log.info("Local queue/s moved to Redis ");
+		
+	}
+	private LocalDataAccessor localData;
+	private void scheduleConnectionCheck()
+	{
+		localData = localDataFactory.getObject();
+		new ConnectionCheckerTask().scheduleNextRun();
+	}
+	private final AtomicBoolean initReady = new AtomicBoolean();
+	private void doInit()
+	{
 		instanceService.verifyInstanceId();
 		loadQueueNames();
+		initReady.compareAndSet(false, true);
+		moveLocal();
 	}
-	private void persistQueueName(String name) {
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.BaseOperations#isRedisAvailable()
+	 */
+	@Override
+	public boolean isRedisAvailable()
+	{
+		try {
+			RedisConnection conn = stringRedis.getConnectionFactory().getConnection();
+			conn.close();//return to pool
+			return true;
+		} catch (RedisConnectionFailureException e) {
+			log.error("* Redis is unavailable * Root cause => "+ e.getMostSpecificCause().getMessage());
+			log.error("Full stacktrace provided in debug log");
+			log.debug("", e);
+		}
+		return false;
+	}
+	
+	/*private void persistQueueName(String name) {
 		if(!queueNames.contains(name))
 		{
 			synchronized (queueNames) {
@@ -85,7 +196,7 @@ public class RedisDataAccessor {
 				}
 			}
 		}
-	}
+	}*/
 
 	
 	@PreDestroy
@@ -93,16 +204,22 @@ public class RedisDataAccessor {
 	{
 		instanceService.removeInstanceId();
 		instanceService.persistQueueNames(findQueueNames());
+		if(localData.isOpen())
+			try {
+				localData.close();
+			} catch (IOException e) {
+				
+			}
 	}
 	
 	private void loadQueueNames() {
 		Set<String> qNames = findQueueNames();
 		queueNames.addAll(qNames);
 	}
-	/**
-	 * Get the current server status info - all.
-	 * @return
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.BaseOperations#getServerInfo()
 	 */
+	@Override
 	public Properties getServerInfo()
 	{
 		return redisTemplate.execute(new RedisCallback<Properties>() {
@@ -114,12 +231,10 @@ public class RedisDataAccessor {
 		});
 	}
 	//TODO: Fetching queue names. Not being able to PERSIST
-	/**
-	 * Fetch the name of queues being maintained in Redis. Uses the KEYS
-	 * command and {@literal QUEUE_PREFIX_PATTERN}, with an O(n) complexity
-	 * @return
-	 *
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.BaseOperations#findQueueNames()
 	 */
+	@Override
 	public Set<String> findQueueNames()
 	{
 		Set<String> qList = redisTemplate.keys(QUEUE_PREFIX_PATTERN);
@@ -134,15 +249,10 @@ public class RedisDataAccessor {
 		return qList;
 	}
 	
-	/**
-	 * Mark the end of a commit phase. The action would be to remove message from inproc queue.
-	 * Also, if enqueueAgain is true, message will be enqueued at head of source queue. The operation
-	 * happens atomically from within a MULTI block.
-	 * 
-	 * @param qr
-	 * @param key
-	 * @param enqueueAgain
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.ConsumerOperations#endCommit(com.reactivetechnologies.blaze.struct.QRecord, java.lang.String, boolean)
 	 */
+	@Override
 	public void endCommit(QRecord qr, String key, boolean enqueueAgain) {
 		List<Object> results = redisTemplate.execute(new SessionCallback<List<Object>>() {
 
@@ -185,41 +295,50 @@ public class RedisDataAccessor {
 			log.warn("Message was not removed from inproc on endCommit. count="+c);
 		}
 	}
-	/**
-	 * Enqueue item by head of the SOURCE queue from the destination, for message re-delivery.
-	 * @param qr
-	 * @param preparedKey
-	 * @deprecated
+	
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.ProducerOperations#enqueue(java.lang.String, com.reactivetechnologies.blaze.struct.QRecord)
 	 */
-	@SuppressWarnings("unused")
-	private void reEnqueue0(QRecord qr, String preparedKey) {
-		BoundListOperations<String, QRecord> listOps = redisTemplate.boundListOps(preparedKey);
-		listOps.rightPush(qr);
-	}
-	/**
-	 * Enqueue items by head (left). Along with the destination queue (termed SOURCE), another surrogate queue (termed SINK) is used 
-	 * for reliability and guaranteed message delivery. See explanation.
-	 * <pre>
-	 *       == == == == ==
-   Right --> ||	 ||	 ||  || <-- Left
-(tail)       == == == == ==      (head)
-	 * </pre>
-	 * 
-	 * We do a LPUSH to enqueue items, which is push from head. So the 'first in' item will always be at tail.
-	 * While dequeuing, thus the tail has to be popped by a RPOP. To achieve data safety on dequeue
-	 * operation, we would do an atomic RPOPLPUSH (POP from tail of a SOURCE queue and push to head of a SINK queue)
-	 * 
-	 * @see {@link https://redis.io/commands/rpoplpush#pattern-reliable-queue}
-	 * @param exchange
-	 * @param key the destination queue
-	 * @param values
-	 */
+	@Override
 	public void enqueue(String preparedKey, QRecord...values) {
 		log.debug("enqueue: LPUSH "+preparedKey);
+		try 
+		{
+			if (initReady.get()) {
+				lpushAll(preparedKey, values);
+			}
+			else
+			{
+				enqueueLocally(preparedKey, values);
+			}
+		} 
+		catch (RedisConnectionFailureException e) {
+			log.error("", e);
+			if(initReady.compareAndSet(true, false))
+				scheduleConnectionCheck();
+			
+			enqueueLocally(preparedKey, values);
+			//handle again?
+		}
+	}
+	private void enqueueLocally(String preparedKey, QRecord...values)
+	{
+		log.warn("Redis is unavailable. Will queue it locally");
+		localData.addAll(preparedKey, values);
+	}
+	/**
+	 * 
+	 * @param preparedKey
+	 * @param values
+	 */
+	public void lpushAll(String preparedKey, QRecord[]values)
+	{
 		BoundListOperations<String, QRecord> listOps = redisTemplate.boundListOps(preparedKey);
-		long c= listOps.leftPushAll(values);
+		long c = listOps.leftPushAll(values);
 		statsRecorder.recordEnqueu(preparedKey, c);
 	}
+	@Autowired
+	private LocalDataAccessorFactoryBean localDataFactory;
 	private final Set<String> queueNames = new HashSet<>();
 	
 	//NOTE: Redis keys are data structure specific. So you cannot use the same key for hash and list.
@@ -233,7 +352,7 @@ public class RedisDataAccessor {
 	public String prepareListKey(String exchange, String key)
 	{
 		String name = new StringBuilder(QUEUE_PREFIX).append(exchange).append(LIST_KEY_JOIN_SEPARATOR).append(key).toString();
-		persistQueueName(name);
+		//persistQueueName(name);
 		return name;
 	}
 	/**
@@ -261,18 +380,10 @@ public class RedisDataAccessor {
 	@Autowired BlazeRedisTemplate redisTemplate;
 	@Autowired
 	private RedisStatsRecorder statsRecorder;
-	/**
-	 * RPOP the next available item from SOURCE queue tail, and LPUSH it to a SINK queue head. This is
-	 * done to handle message delivery in case of failed attempts.
-	 * 
-	 * @see https://redis.io/commands/brpoplpush
-	 * @param xchng
-	 * @param route
-	 * @param await
-	 * @param unit
-	 * @return
-	 * @throws TimeoutException
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.ConsumerOperations#dequeue(java.lang.String, java.lang.String, long, java.util.concurrent.TimeUnit)
 	 */
+	@Override
 	public QRecord dequeue(String xchng, String route, long await, TimeUnit unit) 
 	{
 		log.debug(">>>>>>>>>> Start fetchHead <<<<<<<<< ");
@@ -283,13 +394,10 @@ public class RedisDataAccessor {
 		log.debug("dequeue: RPOP "+preparedKey+" LPUSH "+inprocKey);
 		return redisTemplate.opsForList().rightPopAndLeftPush(preparedKey, inprocKey, await, unit);
 	}
-	/**
-	 * RPOP operation. This method should be used in message polling. For a reliable messaging,
-	 * like in consumer deliveries, {@link #dequeue()} should be considered.
-	 * @param xchng
-	 * @param route
-	 * @return dequeued item or null
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.ConsumerOperations#pop(java.lang.String, java.lang.String, long, java.util.concurrent.TimeUnit)
 	 */
+	@Override
 	public QRecord pop(String xchng, String route, long await, TimeUnit unit)
 	{
 		String preparedKey = prepareListKey(xchng, route);
@@ -307,6 +415,7 @@ public class RedisDataAccessor {
 	 * @param prepareKey
 	 * @return
 	 */
+	@Override
 	public BoundListOperations<String, QRecord> boundListOps(String prepareKey) {
 		return redisTemplate.boundListOps(prepareKey);
 	}
@@ -314,15 +423,14 @@ public class RedisDataAccessor {
 	 * Wrapper on {@linkplain RedisTemplate}.
 	 * @param redisCallback
 	 */
+	@Override
 	public void executePipelined(RedisCallback<Integer> redisCallback) {
 		redisTemplate.executePipelined(redisCallback);
 	}
-	/**
-	 * Clears a given queue using a MULTI RPOP iteration.
-	 * @param xchangeKey
-	 * @param routeKey
-	 * @return true if cleared
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.BaseOperations#clear(java.lang.String, java.lang.String)
 	 */
+	@Override
 	public boolean clear(String xchangeKey, String routeKey)
 	{
 		final String listKey = prepareListKey(xchangeKey, routeKey);
@@ -330,14 +438,14 @@ public class RedisDataAccessor {
 		//it is better to run clear in pipeline for faster execution
 		//anyway we return a boolean to confirm
 		//so clients higher up can do a compare and set type operation.
-		List<Object> removed = clearPipelined(listKey);
+		List<Object> removed = invokeClearInPipeline(listKey);
 		
 		log.debug("Removed items: "+removed);
 		log.info("Removed items count: "+removed.size());
 		return sizeOf(listKey) == 0;
 	}
 	
-	private List<Object> clearPipelined(final String listKey)
+	private List<Object> invokeClearInPipeline(final String listKey)
 	{
 		StringRedisSerializer ser = (StringRedisSerializer) redisTemplate.getKeySerializer();
 		final byte[] keyBytes = ser.serialize(listKey);
@@ -355,7 +463,7 @@ public class RedisDataAccessor {
 			}
 		});
 	}
-	private List<Object> clearTransactional(final String listKey)
+	private List<Object> invokeClearInTransaction(final String listKey)
 	{
 		
 		return redisTemplate.execute(new SessionCallback<List<Object>>() {
@@ -387,11 +495,12 @@ public class RedisDataAccessor {
 	 * @param routeKey
 	 * @return
 	 */
+	@Override
 	public boolean clearInproc(String xchangeKey, String routeKey)
 	{
 		final String listKey = prepareInProcKey(xchangeKey, routeKey);
 
-		List<Object> removed = clearTransactional(listKey);
+		List<Object> removed = invokeClearInTransaction(listKey);
 		log.debug("Removed items: "+removed);
 		log.info("Removed items count: "+removed.size());
 		return sizeOf(listKey) == 0;
@@ -400,25 +509,60 @@ public class RedisDataAccessor {
 	 * Wrapper on {@linkplain RedisTemplate}.
 	 * @return
 	 */
+	@Override
 	public StringRedisSerializer getKeySerializer() {
 		return (StringRedisSerializer) redisTemplate.getKeySerializer();
 	}
-	/**
-	 * Get LLEN for the queue
-	 * @param listKey
-	 * @return 
+	@Autowired
+	private CacheManager cacheMgr;
+	
+	private ObjectMapper om = new ObjectMapper();
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.CacheOperations#put(java.lang.String, K, V)
 	 */
+	@Override
+	public <V, K> void put(String cache, K key, V value)
+	{
+		Cache c = cacheMgr.getCache(cache);
+		ObjectWriter ow = om.writer();
+		try {
+			c.put(ow.writeValueAsString(key), ow.writeValueAsString(value));
+		} catch (JsonProcessingException e) {
+			throw new IllegalArgumentException(e);
+		}
+	}
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.CacheOperations#get(java.lang.String, K)
+	 */
+	@Override
+	public <V, K> V get(String cache, K key)
+	{
+		Cache c = cacheMgr.getCache(cache);
+		ObjectReader or = om.reader();
+		ObjectWriter ow = om.writer();
+		try {
+			ValueWrapper vw = c.get(ow.writeValueAsString(key));
+			if(vw.get() != null)
+			{
+				return or.readValue(vw.get().toString());
+			}
+		} catch (IOException e) {
+			throw new IllegalArgumentException(e);
+		}
+		return null;
+	}
+	
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.BaseOperations#sizeOf(java.lang.String)
+	 */
+	@Override
 	public Long sizeOf(String listKey) {
 		return redisTemplate.boundListOps(listKey).size();
 	}
-	/**
-	 * Enqueue items from the recovery (inproc) queue. These items will be appended at tail
-	 * of the source queue. So it is possible to get a backdated item popped now. This method
-	 * is thus opposite to  the {@link #dequeue()} method in action. 
-	 * @param xchng
-	 * @param route 
-	 * @return 
+	/* (non-Javadoc)
+	 * @see com.reactivetechnologies.blaze.ops.ConsumerOperations#reverseDequeue(java.lang.String, java.lang.String)
 	 */
+	@Override
 	public boolean reverseDequeue(String xchng, String route) {
 		String preparedKey = prepareListKey(xchng, route);
 		String inprocKey = prepareInProcKey(preparedKey);
@@ -426,4 +570,8 @@ public class RedisDataAccessor {
 		QRecord qr = redisTemplate.opsForList().rightPopAndLeftPush(inprocKey, preparedKey);
 		return qr != null;
 	}
+	public boolean isInitReady() {
+		return initReady.get();
+	}
+	
 }

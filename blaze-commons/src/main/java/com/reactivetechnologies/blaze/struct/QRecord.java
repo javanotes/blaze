@@ -6,10 +6,12 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.util.Date;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.reactivetechnologies.mq.Data;
-import com.reactivetechnologies.mq.common.BlazeInternalError;
+import com.reactivetechnologies.mq.QueueService;
+import com.reactivetechnologies.mq.common.BlazeInternalException;
 
 public class QRecord implements Serializable{
 
@@ -31,6 +33,38 @@ public class QRecord implements Serializable{
 		QRecord copy = new QRecord(this);
 		copy.setRedeliveryCount((short) (this.getRedeliveryCount()-1));
 		return copy;
+	}
+	/**
+	 * Transform an instance of {@linkplain Data} to a {@linkplain QRecord}.
+	 * @param t
+	 * @param xchangeKey
+	 * @param routeKey
+	 * @return
+	 */
+	public static QRecord transformData(Data t, String xchangeKey, String routeKey)
+	{
+		return transformData(t, xchangeKey, routeKey, UUID.randomUUID());
+	}
+	/**
+	 * 
+	 * @param t
+	 * @param xchangeKey
+	 * @param routeKey
+	 * @param uid
+	 * @return
+	 */
+	public static QRecord transformData(Data t, String xchangeKey, String routeKey, UUID uid)
+	{
+		QRecord qr = new QRecord(t);
+		qr.getKey().setExchange(xchangeKey);
+		qr.getKey().setRoutingKey(routeKey);
+		qr.getKey().setTimeuid(uid);
+		qr.setT0TS(new Date());
+		
+		return qr;
+	}
+	public static QRecord transformData(Data textData) {
+		return transformData(textData, QueueService.DEFAULT_XCHANGE, textData.getDestination());
 	}
 	private QRecord(QRecord q)
 	{
@@ -58,7 +92,7 @@ public class QRecord implements Serializable{
 		try {
 			md.writeData(new DataOutputStream(bos));
 		} catch (IOException e) {
-			throw new BlazeInternalError("Unable to serialize message", e);
+			throw new BlazeInternalException("Unable to serialize message", e);
 		}
 		setPayload(ByteBuffer.wrap(bos.toByteArray()));
 	}
@@ -139,4 +173,5 @@ public class QRecord implements Serializable{
 		return expiryMillis <= 0 ? false
 				: getT0TS() != null ? System.currentTimeMillis() - getT0TS().getTime() > getExpiryMillis() : false;
 	}
+	
 }

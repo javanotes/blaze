@@ -19,7 +19,7 @@ import java.io.IOException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.reactivetechnologies.mq.common.BlazeInternalError;
+import com.reactivetechnologies.mq.common.BlazeInternalException;
 /**
  * Extends {@linkplain TextData} to store an object in its JSON form. 
  * @author esutdal
@@ -33,7 +33,7 @@ public class ObjectData<T> extends TextData {
 			try {
 				setObject(om.reader().readValue(getPayload()));
 			} catch (IOException e) {
-				throw new BlazeInternalError("Exception while deserializing from JSON", e);
+				throw new BlazeInternalException("Exception while deserializing from JSON", e);
 			}
 		}
 		
@@ -68,7 +68,7 @@ public class ObjectData<T> extends TextData {
 			String json = om.writer().writeValueAsString(object);
 			setPayload(json);
 		} catch (JsonProcessingException e) {
-			throw new BlazeInternalError("Exception while serializing to JSON", e);
+			throw new BlazeInternalException("Exception while serializing to JSON", e);
 		}
 	}
 	/**

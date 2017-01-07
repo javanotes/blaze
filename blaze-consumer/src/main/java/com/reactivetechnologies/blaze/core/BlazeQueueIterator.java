@@ -22,9 +22,9 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.reactivetechnologies.blaze.ops.RedisDataAccessor;
 import com.reactivetechnologies.blaze.struct.QRecord;
 import com.reactivetechnologies.blaze.throttle.ConsumerThrottler;
+import com.reactivetechnologies.mq.ops.ConsumerOperations;
 /**
  * An iterator for fetching the queue head, based on throttling.
  * @author esutdal
@@ -39,7 +39,7 @@ class BlazeQueueIterator implements Iterator<QRecord>{
 	 * @param throttleTps
 	 * @param redisOps
 	 */
-	public BlazeQueueIterator(ConsumerThrottler throttler, int throttleTps, RedisDataAccessor redisOps) {
+	public BlazeQueueIterator(ConsumerThrottler throttler, int throttleTps, ConsumerOperations redisOps) {
 		super();
 		this.throttler = throttler;
 		this.throttleTps = throttleTps;
@@ -47,7 +47,7 @@ class BlazeQueueIterator implements Iterator<QRecord>{
 	}
 	private final ConsumerThrottler throttler;
 	private int throttleTps;
-	private final RedisDataAccessor redisOps;
+	private final ConsumerOperations redisOps;
 	private String routing;
 	public String getRouting() {
 		return routing;

@@ -21,7 +21,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
 import com.reactivetechnologies.blaze.handlers.ConsumerRecoveryHandler;
-import com.reactivetechnologies.blaze.ops.RedisDataAccessor;
+import com.reactivetechnologies.blaze.ops.ConsumerDataAccessor;
+
+/**
+ * 
+ * @author esutdal
+ *
+ */
 public class DefaultConsumerRecoveryHandler implements ConsumerRecoveryHandler {
 	/**
 	 * 
@@ -31,8 +37,11 @@ public class DefaultConsumerRecoveryHandler implements ConsumerRecoveryHandler {
 		super();
 	}
 	
+	/*@Autowired
+	private RedisDataAccessor redisOps;*/
+	
 	@Autowired
-	private RedisDataAccessor redisOps;
+	private ConsumerDataAccessor redisOps;
 	
 	private static final Logger log = LoggerFactory.getLogger(DefaultConsumerRecoveryHandler.class);
 	

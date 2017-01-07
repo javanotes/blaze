@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,14 +29,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.reactivetechnologies.mq.QueueService;
+import com.reactivetechnologies.mq.common.BlazeMessagingException;
 import com.reactivetechnologies.mq.data.TextData;
 
 @RestController
-@RequestMapping("/rmq/api")
+@RequestMapping("/api")
 public class V1ApiController {
 
-	public static final String BADREQ_INV_JSON = "Not a valid JSON";
-	public static final String BADREQ_INV_JSONARR = "Expecting a JSON array";
+	public static final String BADREQ_INV_JSON = "Not a valid json";
+	public static final String BADREQ_INV_TEXT = "Not a valid text";
+	public static final String BADREQ_INV_JSONARR = "Expecting a json array";
 	private static final Logger log = LoggerFactory.getLogger(V1ApiController.class);
 	
 	@Autowired
@@ -58,19 +61,44 @@ public class V1ApiController {
 		}
 	}
 	/**
-	 * 
+	 * Add a json object to queue.
 	 * @param queue
 	 * @param json
 	 * @return
 	 * @throws IOException 
 	 * @throws JsonProcessingException 
+	 * @throws BlazeMessagingException 
 	 */
 	@RequestMapping(method = {RequestMethod.POST}, path = "/add/{queue}")
-	public int addJsonToQueue(@PathVariable("queue") String queue, @RequestBody String json) throws JsonProcessingException, IOException
+	public int addJsonToQueue(@PathVariable("queue") String queue, @RequestBody String json) throws JsonProcessingException, IOException, BlazeMessagingException
 	{
 		om.reader().readTree(json);
 		log.info("Adding to queue - ["+queue+"] "+json);
-		return service.add(Arrays.asList(new TextData(json)), queue);
+		try {
+			return service.add(Arrays.asList(new TextData(json, queue)));
+		} catch (Exception e) {
+			throw new BlazeMessagingException(e);
+		}
+	}
+	/**
+	 * Add a plain text message to queue.
+	 * @param queue
+	 * @param text
+	 * @return
+	 * @throws BlazeMessagingException 
+	 * @throws JsonProcessingException
+	 * @throws IOException
+	 */
+	@RequestMapping(method = {RequestMethod.POST}, path = "/append/{queue}")
+	public int addTextToQueue(@PathVariable("queue") String queue, @RequestBody String text) throws BlazeMessagingException 
+	{
+		Assert.isTrue(StringUtils.hasText(text));
+		log.info("Adding to queue - ["+queue+"] "+text);
+		try {
+			return service.add(Arrays.asList(new TextData(text, queue)));
+		} catch (Exception e) {
+			throw new BlazeMessagingException(e);
+		}
 	}
 	/**
 	 * Add an array of json objects to queue
@@ -78,9 +106,10 @@ public class V1ApiController {
 	 * @param jsonArray
 	 * @throws IOException 
 	 * @throws JsonProcessingException 
+	 * @throws BlazeMessagingException 
 	 */
 	@RequestMapping(method = {RequestMethod.POST}, path = "/ingest/{queue}")
-	public void addJsonArrayToQueue(@PathVariable("queue") String queue, @RequestBody String jsonArray) throws JsonProcessingException, IOException
+	public void addJsonArrayToQueue(@PathVariable("queue") String queue, @RequestBody String jsonArray) throws JsonProcessingException, IOException, BlazeMessagingException
 	{
 		JsonNode root = om.reader().readTree(jsonArray);
 		Assert.isTrue(root.isArray(), "Not a JSON array");
@@ -93,17 +122,26 @@ public class V1ApiController {
 			list.add(new TextData(ow.writeValueAsString(each), queue));
 		}
 		log.info("Adding to queue - ["+queue+"] "+list);
-		service.ingest(list, queue);
+		try {
+			service.ingest(list);
+		} catch (Exception e) {
+			throw new BlazeMessagingException(e);
+		}
 	}
 	
 	@ResponseStatus(value=HttpStatus.BAD_REQUEST, reason=BADREQ_INV_JSON)
 	@ExceptionHandler({JsonProcessingException.class, IOException.class})
 	public void onMalformedJson(Throwable e){
-		log.warn(BADREQ_INV_JSON, e);
+		log.info(BADREQ_INV_JSON, e);
 	}
-	@ResponseStatus(value=HttpStatus.BAD_REQUEST, reason=BADREQ_INV_JSONARR)
+	@ResponseStatus(value=HttpStatus.BAD_REQUEST, reason=BADREQ_INV_JSONARR+"/"+BADREQ_INV_TEXT)
 	@ExceptionHandler({IllegalArgumentException.class})
 	public void onMalformedJsonArray(Throwable e){
-		log.warn(BADREQ_INV_JSONARR, e);
+		log.info(BADREQ_INV_JSONARR+"/"+BADREQ_INV_TEXT, e);
+	}
+	@ResponseStatus(value=HttpStatus.INTERNAL_SERVER_ERROR)
+	@ExceptionHandler({BlazeMessagingException.class})
+	public void onMessagingException(Throwable e){
+		log.error(HttpStatus.INTERNAL_SERVER_ERROR.name(), e);
 	}
 }

@@ -68,7 +68,7 @@ class InstanceInitializationService
 	
 	public void removeInstanceId()
 	{
-		BoundSetOperations<String, String> setOps = stringRedis.boundSetOps(RedisDataAccessor.RPOPLPUSH_DESTN_SET);
+		BoundSetOperations<String, String> setOps = stringRedis.boundSetOps(BaseDataAccessor.RPOPLPUSH_DESTN_SET);
 		setOps.remove(instanceId);
 	}
 
@@ -97,12 +97,12 @@ class InstanceInitializationService
 	}
 	private Long setInstanceId(Optional<BoundSetOperations<String, String>> setOps)
 	{
-		return setOps.orElse(stringRedis.boundSetOps(RedisDataAccessor.RPOPLPUSH_DESTN_SET)).add(instanceId) ;
+		return setOps.orElse(stringRedis.boundSetOps(BaseDataAccessor.RPOPLPUSH_DESTN_SET)).add(instanceId) ;
 	}
 	
 	private void compareAndSetInstanceId()
 	{
-		BoundSetOperations<String, String> setOps = stringRedis.boundSetOps(RedisDataAccessor.RPOPLPUSH_DESTN_SET);
+		BoundSetOperations<String, String> setOps = stringRedis.boundSetOps(BaseDataAccessor.RPOPLPUSH_DESTN_SET);
 		if(setOps.isMember(instanceId))
 		{
 			throw new BlazeDuplicateInstanceException("'"+instanceId+"' not allowed");
@@ -126,7 +126,7 @@ class InstanceInitializationService
 		
 		List<RedisClientInfo> clients = redisTemplate.getClientList();
 		log.info("No of connected clients -> "+clients.size());
-		if(RedisDataAccessor.log.isDebugEnabled())
+		if(log.isDebugEnabled())
 		{
 			for(RedisClientInfo c : clients)
 			{

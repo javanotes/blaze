@@ -36,7 +36,7 @@ public class RedisStatsRecorder {
 	
 	private static String hashKey(String key)
 	{
-		return key + RedisDataAccessor.STATS_SUFFIX;
+		return key + BaseDataAccessor.STATS_SUFFIX;
 	}
 	
 	public void recordEnqueu(String key)

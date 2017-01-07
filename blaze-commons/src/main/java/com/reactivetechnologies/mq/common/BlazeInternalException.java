@@ -1,13 +1,13 @@
 package com.reactivetechnologies.mq.common;
 
-public class BlazeInternalError extends RuntimeException {
+public class BlazeInternalException extends RuntimeException {
 
 	/**
 	 * 
 	 */
 	private static final long serialVersionUID = 1L;
 
-	public BlazeInternalError(String msg, Throwable cause) {
+	public BlazeInternalException(String msg, Throwable cause) {
 		super(msg, cause);
 	}
 

@@ -3,7 +3,7 @@ package com.reactivetechnologies.blaze;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 
-@SpringBootApplication(scanBasePackageClasses = {Config.class})
+@SpringBootApplication
 public class BlazeWeb {
 
 	public static void main(String[] args) {

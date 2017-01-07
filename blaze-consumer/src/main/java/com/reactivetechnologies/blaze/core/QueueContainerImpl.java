@@ -25,11 +25,11 @@ import org.springframework.util.Assert;
 
 import com.reactivetechnologies.blaze.handlers.ConsumerRecoveryHandler;
 import com.reactivetechnologies.blaze.handlers.DeadLetterHandler;
-import com.reactivetechnologies.blaze.ops.RedisDataAccessor;
+import com.reactivetechnologies.blaze.ops.ConsumerDataAccessor;
 import com.reactivetechnologies.blaze.struct.QRecord;
 import com.reactivetechnologies.blaze.throttle.ConsumerThrottlerFactoryBean;
 import com.reactivetechnologies.mq.Data;
-import com.reactivetechnologies.mq.common.BlazeInternalError;
+import com.reactivetechnologies.mq.common.BlazeInternalException;
 import com.reactivetechnologies.mq.consume.AbstractQueueListener;
 import com.reactivetechnologies.mq.consume.QueueListener;
 import com.reactivetechnologies.mq.container.QueueContainer;
@@ -45,8 +45,11 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 
 	private static final Logger log = LoggerFactory.getLogger(QueueContainerImpl.class);
 	private ExecutorService asyncTasks;
+	/*@Autowired
+	private RedisDataAccessor redisOps;*/
+	
 	@Autowired
-	private RedisDataAccessor redisOps;
+	private ConsumerDataAccessor redisOps;
 	
 	private ExecutorService threadPool;
 	@Value("${consumer.worker.thread:0}")
@@ -252,7 +255,7 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 				
 			} 
 			catch (Exception e) {
-				throw new BlazeInternalError("", e);
+				throw new BlazeInternalException("", e);
 			}
 		}
 		

@@ -31,7 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.reactivetechnologies.blaze.handlers.ThrottlingCommandHandlerFactory;
-import com.reactivetechnologies.mq.common.BlazeInternalError;
+import com.reactivetechnologies.mq.common.BlazeInternalException;
 class DefaultConsumerThrottler extends ChainBase implements ConsumerThrottler{
 
 	private long throttlerPeriod;
@@ -145,7 +145,7 @@ class DefaultConsumerThrottler extends ChainBase implements ConsumerThrottler{
 		try {
 			execute(ctx);
 		} catch (Exception e) {
-			throw new BlazeInternalError("Exception in message throtller", e);
+			throw new BlazeInternalException("Exception in message throtller", e);
 		}
 		return !ctx.isThrottle();
 		

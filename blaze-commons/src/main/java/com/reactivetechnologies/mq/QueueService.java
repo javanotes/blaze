@@ -29,9 +29,6 @@ SOFTWARE.
 package com.reactivetechnologies.mq;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
-
-import com.reactivetechnologies.blaze.struct.QRecord;
 
 public interface QueueService {
 
@@ -109,6 +106,6 @@ public interface QueueService {
 	 * @param unit
 	 * @return
 	 */
-	QRecord getNext(String xchng, String route, long timeout, TimeUnit unit);
+	//QRecord getNext(String xchng, String route, long timeout, TimeUnit unit);
 
 }

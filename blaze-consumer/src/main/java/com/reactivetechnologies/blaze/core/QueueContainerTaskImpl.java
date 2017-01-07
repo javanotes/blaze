@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import com.reactivetechnologies.blaze.struct.QRecord;
 import com.reactivetechnologies.mq.Data;
-import com.reactivetechnologies.mq.common.BlazeInternalError;
+import com.reactivetechnologies.mq.common.BlazeInternalException;
 import com.reactivetechnologies.mq.common.BlazeMessagingException;
 import com.reactivetechnologies.mq.common.MessageThrottledException;
 import com.reactivetechnologies.mq.consume.AbstractQueueListener;
@@ -197,7 +197,7 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 		}
 		catch(Exception e)
 		{
-			BlazeInternalError be = new BlazeInternalError("Unexpected error!", e);
+			BlazeInternalException be = new BlazeInternalException("Unexpected error!", e);
 			log.error("Internal error: Check stacktrace", be);
 			throw be;
 		}
