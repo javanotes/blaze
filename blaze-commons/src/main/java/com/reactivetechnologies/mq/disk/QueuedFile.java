@@ -25,13 +25,11 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -285,11 +283,12 @@ class QueuedFile implements Closeable {
 	}
 	@Override
 	public void close() throws IOException {
-		syncFinally();
+		
 		if (fileLock != null) {
 			fileLock.release();
 		}
 		if (dataFile != null) {
+			syncFinally();
 			dataFile.close();
 		}
 		fileLock = null;
@@ -327,7 +326,7 @@ class QueuedFile implements Closeable {
 		return true;
 		
 	}
-	public static void main(String[] args) throws IOException {
+	public static void main(String[] args) throws IOException {/*
 		
 		final int ITERATION = 10000;
 		final String msg = "MSG-";
@@ -366,7 +365,7 @@ class QueuedFile implements Closeable {
 				
 			}
 			
-			/*for (; i.get() < ITERATION;) {
+			for (; i.get() < ITERATION;) {
 				exec.submit(new Runnable() {
 					
 					@Override
@@ -379,7 +378,7 @@ class QueuedFile implements Closeable {
 					}
 				});
 				
-			}*/
+			}
 			exec.shutdown();
 			try {
 				exec.awaitTermination(1, TimeUnit.HOURS);
@@ -403,5 +402,5 @@ class QueuedFile implements Closeable {
 		}
 		
 	
-	}
+	*/}
 }
