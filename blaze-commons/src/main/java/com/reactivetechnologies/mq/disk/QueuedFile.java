@@ -25,8 +25,16 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
 /**
  * A local FIFO file implementation. Records can be appended to tail and retrieved from head.
  * Uses a {@linkplain RandomAccessFile} for operations. The {@link #addTail()}, {@link #getHead()} 
@@ -66,13 +74,38 @@ class QueuedFile implements Closeable {
 
 			
 			open(db);
+			startSyncThread();
 			
 		} catch (IOException e) {
 			throw e;
 		}
 
 	}
-	
+	private ScheduledExecutorService syncThread;
+	private void startSyncThread() {
+		syncThread = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+			
+			@Override
+			public Thread newThread(Runnable r) {
+				Thread t = new Thread(r, "QueuedFile.SyncThread-"+StringUtils.getFilename(getFilePath().toString()));
+				t.setDaemon(true);
+				return t;
+			}
+		});
+		// If any execution of the task encounters an exception, subsequent executions are suppressed.
+		//however, we can probably ignore it for our cause, since we are catching the exception.
+		syncThread.scheduleWithFixedDelay(new Runnable() {
+			
+			@Override
+			public void run() {
+				try {
+					sync(false);
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}, 1, 1, TimeUnit.SECONDS);
+	}
 	public QueuedFile(String dir, String fileName) throws IOException
 	{
 		this(dir, fileName, true);
@@ -112,12 +145,12 @@ class QueuedFile implements Closeable {
 	{
 		//new file. create queue pointer
 		pointer = new QPointer();
-		updatePointer();
+		writePointers();
 		
 		pointer.head = dataFile.getFilePointer();
 		pointer.tail = pointer.head;
 		
-		updatePointer();
+		writePointers();
 	}
 	private void initQueuePointer() throws IOException
 	{
@@ -140,10 +173,19 @@ class QueuedFile implements Closeable {
 		}
 		
 	}
-	private void updatePointer() throws IOException
+	//write operations
+	private final AtomicBoolean isDirty = new AtomicBoolean();
+	private void writeData(byte[] b) throws IOException
+	{
+		dataFile.writeInt(b.length);
+		dataFile.write(b);
+		isDirty.compareAndSet(false, true);
+	}
+	private void writePointers() throws IOException
 	{
 		dataFile.seek(0);
 		dataFile.write(pointer.getBytes());
+		isDirty.compareAndSet(false, true);
 	}
 	private byte[] read() throws IOException
 	{
@@ -155,43 +197,47 @@ class QueuedFile implements Closeable {
 	private void updateHead() throws IOException
 	{
 		pointer.head = dataFile.getFilePointer();
-		updatePointer();
+		writePointers();
 	}
 	private void updateTail() throws IOException
 	{
 		pointer.tail = dataFile.getFilePointer();
-		updatePointer();
+		writePointers();
 	}
-	synchronized byte[] getHead() throws IOException
+	synchronized final byte[] getHead() throws IOException
 	{
-		dataFile.seek(pointer.head);
-		byte[] b = read();
-		updateHead();
-		sync();
-		size--;
-		return b;
+		//lock();
+		try {
+			dataFile.seek(pointer.head);
+			byte[] b = read();
+			updateHead();
+			size--;
+			return b;
+		} finally {
+			//unlock();
+		}
 	}
 	
 	public boolean isEmpty()
 	{
 		return pointer.head == pointer.tail;
 	}
-	private void write(byte[] b) throws IOException
+	
+	synchronized final void addTail(byte[] b) throws IOException
 	{
-		dataFile.writeInt(b.length);
-		dataFile.write(b);
-	}
-	synchronized void addTail(byte[] b) throws IOException
-	{
-		dataFile.seek(pointer.tail);
-		write(b);
-		updateTail();
-		sync();
-		size++;
+		//lock();
+		try {
+			dataFile.seek(pointer.tail);
+			writeData(b);
+			updateTail();
+			size++;
+		} finally {
+			//unlock();
+		}
 	}
 	private Path filePath;
-	private void open(File dbFile) throws IOException {
-
+	private void open(File dbFile) throws IOException 
+	{
 		dataFile  = new RandomAccessFile(dbFile, "rwd");
 		if(!acquire())
 		{
@@ -223,8 +269,23 @@ class QueuedFile implements Closeable {
 		fileLock = dataFile.getChannel().tryLock();
 		return fileLock != null;
 	}
+	private void syncFinally()
+	{
+		syncThread.shutdown();
+		try {
+			syncThread.awaitTermination(1, TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			
+		}
+		try {
+			sync(true);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
 	@Override
 	public void close() throws IOException {
+		syncFinally();
 		if (fileLock != null) {
 			fileLock.release();
 		}
@@ -234,12 +295,22 @@ class QueuedFile implements Closeable {
 		fileLock = null;
 		dataFile = null;
 		closed = true;
+		
+		
 	}
 
 	private volatile boolean closed = false;
-	private void sync() throws SyncFailedException, IOException
+	private void sync(boolean force) throws SyncFailedException, IOException
 	{
-		dataFile.getFD().sync();
+		if (force) {
+			dataFile.getFD().sync();
+			isDirty.compareAndSet(true, false);
+		}
+		else
+		{
+			if(isDirty.compareAndSet(true, false))
+				dataFile.getFD().sync();
+		}
 	}
 	public boolean delete()
 	{
@@ -256,32 +327,81 @@ class QueuedFile implements Closeable {
 		return true;
 		
 	}
-	public static void main(String[] args) throws IOException {/*
-		byte[] m1 = "MSG1".getBytes();
-		byte[] m2 = "MSG2".getBytes();
-		byte[] m3 = "MSG3".getBytes();
+	public static void main(String[] args) throws IOException {
 		
-		QueuedFile qf = null;
+		final int ITERATION = 10000;
+		final String msg = "MSG-";
+		
+		final QueuedFile qf = new QueuedFile(".", "test_file");
 		try {
-			qf = new QueuedFile(".", "test_file");
+			
 			System.out.println(qf.isEmpty());
 			System.out.println(qf.size());
 			
-			//gets
-			System.out.println(new String(qf.getHead()));
-			System.out.println(new String(qf.getHead()));
-			System.out.println(new String(qf.getHead()));
+			//get
+			Thread conThread = new Thread(){
+				public void run()
+				{
+					while(!qf.isEmpty()){
+						try {
+							System.out.println(new String(qf.getHead()));
+						} catch (IOException e) {
+							e.printStackTrace();
+						}
+					}
+				}
+			};
 			
-			//adds
-			qf.addTail(m1);
-			qf.addTail(m2);
-			qf.addTail(m3);
+			AtomicInteger i = new AtomicInteger();
+			ExecutorService exec = Executors.newSingleThreadExecutor();
+			//add
+			long s = System.currentTimeMillis();
 			
+			for (; i.get() < ITERATION;) {
+				try {
+					qf.addTail((msg+i.getAndIncrement()).getBytes());
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				
+			}
+			
+			/*for (; i.get() < ITERATION;) {
+				exec.submit(new Runnable() {
+					
+					@Override
+					public void run() {
+						try {
+							qf.addTail((msg+i.getAndIncrement()).getBytes());
+						} catch (IOException e) {
+							e.printStackTrace();
+						}
+					}
+				});
+				
+			}*/
+			exec.shutdown();
+			try {
+				exec.awaitTermination(1, TimeUnit.HOURS);
+			} catch (InterruptedException e2) {
+				
+			}
+			long e = System.currentTimeMillis();
+			System.out.println("Time taken: "+(e-s));
+			
+			conThread.start();
+			try {
+				conThread.join(TimeUnit.SECONDS.toMillis(60));
+			} catch (InterruptedException e1) {
+				
+			}
+						
 		} finally {
 			qf.close();
 			if(qf.isEmpty())
 				qf.delete();
 		}
 		
-	*/}
+	
+	}
 }
