@@ -144,7 +144,7 @@ class LocalDataAccessor implements Closeable{
 			}
 			for(String filePattern : arrangeFilesInChronologicalOrder(files))
 			{
-				log.info("Moving file- "+filePattern);
+				log.debug("Moving file - "+filePattern);
 				try(LocalDataAccessor localDataFile = new LocalDataAccessor(localQueueDir, filePattern))
 				{
 					if (!localDataFile.isEmpty()) 
