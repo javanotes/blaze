@@ -9,6 +9,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinPool.ForkJoinWorkerThreadFactory;
 import java.util.concurrent.ForkJoinWorkerThread;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
@@ -45,15 +47,17 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 
 	private static final Logger log = LoggerFactory.getLogger(QueueContainerImpl.class);
 	private ExecutorService asyncTasks;
-	/*@Autowired
-	private RedisDataAccessor redisOps;*/
-	
+	private ScheduledExecutorService scheduledTasks;
 	@Autowired
 	private ConsumerDataAccessor redisOps;
 	
 	private ExecutorService threadPool;
 	@Value("${consumer.worker.thread:0}")
 	private int fjWorkers;
+	@Value("${consumer.redelivery.delay.millis:1000}")
+	private long backoffRollbackDelay;
+	@Value("${consumer.redelivery.delay.backoffExp:0}")
+	private int backoffRollbackExponent;
 	private List<ExecutorService> threadPools;
 	private static ForkJoinPool newFJPool(int coreThreads, String name)
 	{
@@ -78,7 +82,40 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 		      }
 		    }, true);
 	}
-		
+	/**
+	 * Perform a backing off rollback (exponentially if required), so that the message
+	 * gets (re)delivered only after a delay. This is done in message oriented middle-wares 
+	 * to allow some time for recovery at consumer end, if possible.
+	 * @param qr
+	 */
+	final void scheduleRollback(QRecord qr)
+	{
+		if(backoffRollbackDelay > 0){
+			long delay = backoffRollbackDelay + (qr.getRedeliveryCount() * backoffRollbackExponent);
+			log.info("Backing off redlivery by "+delay+" millis");
+			
+			scheduleTaskAfter(new Runnable() {
+				
+				@Override
+				public void run() {
+					rollback(qr);
+				}
+			}, delay, TimeUnit.MILLISECONDS);
+		}
+		else
+			rollback(qr);
+	}
+	/**
+	 * Create and execute a one-shot action that becomes enabled after the given delay.	
+	 * @param task
+	 * @param delay
+	 * @param unit
+	 * @return
+	 */
+	ScheduledFuture<?> scheduleTaskAfter(Runnable task, long delay, TimeUnit unit)
+	{
+		return scheduledTasks.schedule(task, delay, unit);
+	}
 	@PostConstruct
 	void init()
 	{
@@ -97,6 +134,17 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 			}
 		});
 		threadPools.add(asyncTasks);
+		
+		scheduledTasks = Executors.newScheduledThreadPool(coreThreads, new ThreadFactory() {
+			int n=1;
+			@Override
+			public Thread newThread(Runnable arg0) {
+				Thread t = new Thread(arg0, "BlazeContainerScheduler."+(n++));
+				t.setDaemon(true);
+				return t;
+			}
+		});
+		threadPools.add(scheduledTasks);
 		
 		running = true;
 		log.info("Container initialized with parallelism "+((ForkJoinPool) threadPool).getParallelism() + ", coreThreads "+coreThreads);
@@ -150,7 +198,7 @@ public class QueueContainerImpl implements Runnable, QueueContainer{
 		recordToStats(aListener, true);
 	}
 	private <T extends Data> void recordToStats(AbstractQueueListener<T> aListener, boolean isRegistered) {
-		// TODO Auto-generated method stub
+		// TODO recordToStats consumer
 		
 	}
 

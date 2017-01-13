@@ -155,6 +155,7 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 		return consumer.allowRedelivery(qr.isExpired(), qr.getRedeliveryCount(), d);
 		
 	}
+	
 	/**
 	 * 
 	 * @param qr
@@ -165,7 +166,7 @@ class QueueContainerTaskImpl<T extends Data> extends RecursiveAction implements 
 	{
 		log.warn("Queue container caught error. Message will be redelivered. Error => "+e.getCause());
 		log.debug("", e);
-		container.rollback(qr);
+		container.scheduleRollback(qr);
 		if(d != null)
 		{
 			consumer.onExceptionCaught(e, d);
