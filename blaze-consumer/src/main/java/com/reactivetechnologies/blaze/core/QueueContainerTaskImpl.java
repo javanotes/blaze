@@ -8,11 +8,11 @@ import org.slf4j.LoggerFactory;
 
 import com.reactivetechnologies.blaze.struct.QRecord;
 import com.reactivetechnologies.mq.Data;
-import com.reactivetechnologies.mq.common.BlazeInternalException;
-import com.reactivetechnologies.mq.common.BlazeMessagingException;
-import com.reactivetechnologies.mq.common.MessageThrottledException;
 import com.reactivetechnologies.mq.consume.AbstractQueueListener;
 import com.reactivetechnologies.mq.container.QueueContainerTask;
+import com.reactivetechnologies.mq.exceptions.BlazeInternalException;
+import com.reactivetechnologies.mq.exceptions.BlazeMessagingException;
+import com.reactivetechnologies.mq.exceptions.MessageThrottledException;
 /**
  * The task class that works in a work-stealing thread pool.
  * @author esutdal

@@ -31,7 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.reactivetechnologies.blaze.handlers.ThrottlingCommandHandlerFactory;
-import com.reactivetechnologies.mq.common.BlazeInternalException;
+import com.reactivetechnologies.mq.exceptions.BlazeInternalException;
 class DefaultConsumerThrottler extends ChainBase implements ConsumerThrottler{
 
 	private long throttlerPeriod;

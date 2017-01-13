@@ -152,7 +152,7 @@ class LocalDataAccessor implements Closeable{
 						List<QRecordExternalizable> records = localDataFile.pollLocal();
 						boolean moved = move(records, redisOps);
 						if (moved) {
-							log.info("Moved file- " + filePattern);
+							log.debug("Moved file- " + filePattern);
 							localDataFile.releaseResources();
 						} else {
 							log.warn("File " + filePattern
@@ -161,7 +161,7 @@ class LocalDataAccessor implements Closeable{
 					}
 					else
 					{
-						log.info("Removed file- " + filePattern);
+						log.debug("Removed file- " + filePattern);
 						localDataFile.releaseResources();
 					}
 				} 

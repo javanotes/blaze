@@ -29,10 +29,10 @@ import com.reactivetechnologies.blaze.ops.ConsumerDataAccessor;
 import com.reactivetechnologies.blaze.struct.QRecord;
 import com.reactivetechnologies.blaze.throttle.ConsumerThrottlerFactoryBean;
 import com.reactivetechnologies.mq.Data;
-import com.reactivetechnologies.mq.common.BlazeInternalException;
 import com.reactivetechnologies.mq.consume.AbstractQueueListener;
 import com.reactivetechnologies.mq.consume.QueueListener;
 import com.reactivetechnologies.mq.container.QueueContainer;
+import com.reactivetechnologies.mq.exceptions.BlazeInternalException;
 /**
  * The core container that manages listener task execution. This class
  * is responsible for scheduling the worker threads amongst the listeners and

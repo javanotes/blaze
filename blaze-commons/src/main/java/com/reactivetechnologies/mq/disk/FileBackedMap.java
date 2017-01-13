@@ -59,12 +59,12 @@ import org.springframework.util.Assert;
  *               <p>
  *               <b>Note:</b> The compaction of deleted records is in WIP state.
  */
-class MappedFile implements Closeable {
+class FileBackedMap implements Closeable {
 
 	static final String DB_FILE_SUFF = ".dat";
 	static final String IDX_FILE_SUFF = ".idx";
 
-	private static final Logger log = LoggerFactory.getLogger(MappedFile.class);
+	private static final Logger log = LoggerFactory.getLogger(FileBackedMap.class);
 	private RandomAccessFile dataFile;
 	private RandomAccessFile indexFile;
 	private FileChannel dbChannel;
@@ -78,7 +78,7 @@ class MappedFile implements Closeable {
 	 * @param fileName
 	 * @throws IOException
 	 */
-	public MappedFile(String dir, String fileName) throws IOException {
+	public FileBackedMap(String dir, String fileName) throws IOException {
 		this(dir, fileName, false, DEFAULT_CACHE_SIZE);
 	}
 
@@ -91,7 +91,7 @@ class MappedFile implements Closeable {
 	 * @param usecompact
 	 * @throws IOException
 	 */
-	public MappedFile(String dir, String fileName, boolean usecompact, int cacheSize) throws IOException {
+	public FileBackedMap(String dir, String fileName, boolean usecompact, int cacheSize) throws IOException {
 		this.fileName = fileName;
 		File f = new File(dir);
 		if (!f.exists())

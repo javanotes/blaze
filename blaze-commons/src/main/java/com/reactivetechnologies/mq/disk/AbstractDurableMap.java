@@ -36,7 +36,7 @@ import java.util.Set;
 
 public abstract class AbstractDurableMap<K,V> implements Map<K, V>, Closeable {
 
-  private final MappedFile file;
+  private final FileBackedMap file;
   /**
    * 
    * @param dir
@@ -45,7 +45,7 @@ public abstract class AbstractDurableMap<K,V> implements Map<K, V>, Closeable {
   public AbstractDurableMap(String dir, String fileName)
   {
     try {
-      file = new MappedFile(dir, fileName);
+      file = new FileBackedMap(dir, fileName);
     } catch (IOException e) {
       throw new IllegalArgumentException(e);
     }
@@ -53,7 +53,7 @@ public abstract class AbstractDurableMap<K,V> implements Map<K, V>, Closeable {
   /**
    * Delete the underlying mapped file and any related data structures. The physical file will be 
    * deleted and all caches will be emptied.
-   * @see MappedFile#destroy()
+   * @see FileBackedMap#destroy()
    */
   public void destroy()
   {

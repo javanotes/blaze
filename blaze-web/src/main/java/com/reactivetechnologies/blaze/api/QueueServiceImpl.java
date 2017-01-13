@@ -52,7 +52,7 @@ public class QueueServiceImpl implements QueueService, MetricService{
 		return producerOps.prepareListKey(xchangeKey, routeKey);
 	}
 	
-	private <T extends Data> int add0(List<T> msg, String xchangeKey, String routeKey, boolean getcount)
+	private <T extends Data> int add0(List<T> msg, String xchangeKey, String routeKey, boolean getcount) 
 	{
 		QRecord qr;
 		long start = System.currentTimeMillis();

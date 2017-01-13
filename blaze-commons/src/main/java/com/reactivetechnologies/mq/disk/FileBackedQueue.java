@@ -25,11 +25,13 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -40,22 +42,26 @@ import org.springframework.util.StringUtils;
  * @author esutdal
  *
  */
-class QueuedFile implements Closeable {
+class FileBackedQueue implements Closeable {
 
 	static final String DB_FILE_SUFF = ".qdat";
-	private volatile int size = 0;
+	static final long MAP_CHUNK_SIZE = 8192;
+	private final AtomicInteger size = new AtomicInteger();
 	public int size()
 	{
-		return size;
+		return size.get();
 	}
 	/**
-	 * 
+	 * Constructor for new instance.
 	 * @param dir
 	 * @param fileName
+	 * @param createIfAbsent
+	 * @param usingMemoryMappedIO
 	 * @throws IOException
 	 */
-	public QueuedFile(String dir, String fileName, boolean createIfAbsent) throws IOException
+	public FileBackedQueue(String dir, String fileName, boolean createIfAbsent, boolean usingMemoryMappedIO) throws IOException
 	{
+		this.useMemMappedIO = usingMemoryMappedIO;
 		File f = new File(dir);
 		if (!f.exists())
 			f.mkdirs();
@@ -79,8 +85,20 @@ class QueuedFile implements Closeable {
 		}
 
 	}
+	/**
+	 * Constructor.
+	 * @param dir
+	 * @param fileName
+	 * @param createIfAbsent
+	 * @throws IOException
+	 */
+	public FileBackedQueue(String dir, String fileName, boolean createIfAbsent) throws IOException
+	{
+		this(dir, fileName, createIfAbsent, false);
+	}
 	private ScheduledExecutorService syncThread;
-	private void startSyncThread() {
+	private void startSyncThread() 
+	{
 		syncThread = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
 			
 			@Override
@@ -104,21 +122,41 @@ class QueuedFile implements Closeable {
 			}
 		}, 1, 1, TimeUnit.SECONDS);
 	}
-	public QueuedFile(String dir, String fileName) throws IOException
+	/**
+	 * 
+	 * @param dir
+	 * @param fileName
+	 * @throws IOException
+	 */
+	public FileBackedQueue(String dir, String fileName) throws IOException
 	{
 		this(dir, fileName, true);
 
 	}
+	
 	public Path getFilePath() {
 		return filePath;
 	}
-	private static class QPointer
+	static class QPointer
 	{
 		@Override
 		public String toString() {
 			return "QPointer [head=" + head + ", tail=" + tail + "]";
 		}
-		private long head = -1, tail = -1;
+		private long head = -1;
+		public long getHead() {
+			return head;
+		}
+		public void setHead(long head) {
+			this.head = head;
+		}
+		private long tail = -1;
+		public long getTail() {
+			return tail;
+		}
+		public void setTail(long tail) {
+			this.tail = tail;
+		}
 		private static final int SIZEOF = 16;
 		byte[] getBytes()
 		{
@@ -137,7 +175,13 @@ class QueuedFile implements Closeable {
 		}
 	}
 	private RandomAccessFile dataFile;
+	public RandomAccessFile getDataFile() {
+		return dataFile;
+	}
 	private volatile QPointer pointer;
+	public QPointer getPointer() {
+		return pointer;
+	}
 	private FileLock fileLock;
 	private void createQueuePointer() throws IOException
 	{
@@ -167,7 +211,7 @@ class QueuedFile implements Closeable {
 		while (dataFile.getFilePointer() < pointer.tail) {
 			int len = dataFile.readInt();
 			dataFile.skipBytes(len);
-			size++;
+			size.incrementAndGet();
 		}
 		
 	}
@@ -179,7 +223,7 @@ class QueuedFile implements Closeable {
 		dataFile.write(b);
 		isDirty.compareAndSet(false, true);
 	}
-	private void writePointers() throws IOException
+	void writePointers() throws IOException
 	{
 		dataFile.seek(0);
 		dataFile.write(pointer.getBytes());
@@ -202,37 +246,65 @@ class QueuedFile implements Closeable {
 		pointer.tail = dataFile.getFilePointer();
 		writePointers();
 	}
-	synchronized final byte[] getHead() throws IOException
+	/**
+	 * Get data from the head of the queue.
+	 * @return
+	 * @throws IOException
+	 */
+	public final byte[] getHead() throws IOException
 	{
-		//lock();
-		try {
-			dataFile.seek(pointer.head);
-			byte[] b = read();
-			updateHead();
-			size--;
-			return b;
-		} finally {
-			//unlock();
-		}
+		byte[] b = useMemMappedIO ? getFromMMappedFile() : getFromDataFile();
+		size.decrementAndGet();
+		return b;
+		
 	}
-	
+	private synchronized byte[] getFromDataFile() throws IOException
+	{
+		dataFile.seek(pointer.head);
+		byte[] b = read();
+		updateHead();
+		return b;
+	}
+	private byte[] getFromMMappedFile() throws IOException
+	{
+		return headMMap.read();
+	}
 	public boolean isEmpty()
 	{
-		return pointer.head == pointer.tail;
+		return useMemMappedIO ? isEmpty0() : pointer.head == pointer.tail;
+	}
+	private boolean isEmpty0()
+	{
+		return tailMMap.getPosition() == headMMap.getPosition();
+	}
+	private final boolean useMemMappedIO;
+	/**
+	 * Add data to the tail of the queue.
+	 * @param b
+	 * @throws IOException
+	 */
+	public final void addTail(byte[] b) throws IOException
+	{
+		if (useMemMappedIO) {
+			addToMMappedFile(b);
+		}
+		else
+			addToDataFile(b);
+		
+		size.incrementAndGet();
+		
+	}
+	private synchronized void addToDataFile(byte[] b) throws IOException
+	{
+		dataFile.seek(pointer.tail);
+		writeData(b);
+		updateTail();
+	}
+	private void addToMMappedFile(byte[] b) throws IOException
+	{
+		tailMMap.write(b);
 	}
 	
-	synchronized final void addTail(byte[] b) throws IOException
-	{
-		//lock();
-		try {
-			dataFile.seek(pointer.tail);
-			writeData(b);
-			updateTail();
-			size++;
-		} finally {
-			//unlock();
-		}
-	}
 	private Path filePath;
 	private void open(File dbFile) throws IOException 
 	{
@@ -249,8 +321,26 @@ class QueuedFile implements Closeable {
 		{
 			initQueuePointer();
 		}
+		
+		if (useMemMappedIO) {
+			initMemoryMaps();
+		}
 		closed = false;
 		filePath = dbFile.toPath();
+	}
+	private MMapHeadSeq headMMap;
+	private MMapTailSeq tailMMap;
+	
+	/**
+	 * Initialize the memory mapped files corresponding to head and tail regions.
+	 * @throws IOException
+	 */
+	private void initMemoryMaps() throws IOException {
+		if (useMemMappedIO) {
+			throw new UnsupportedOperationException("Memory mapped IO is an experimental feature");
+		}
+		headMMap = new MMapHeadSeq(this);
+		tailMMap = new MMapTailSeq(this);
 	}
 	/**
 	 * Reopen operation for a file which has been {@link #delete()}ed.
@@ -269,11 +359,13 @@ class QueuedFile implements Closeable {
 	}
 	private void syncFinally()
 	{
-		syncThread.shutdown();
-		try {
-			syncThread.awaitTermination(1, TimeUnit.SECONDS);
-		} catch (InterruptedException e) {
-			
+		if (syncThread != null) {
+			syncThread.shutdown();
+			try {
+				syncThread.awaitTermination(1, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {
+
+			} 
 		}
 		try {
 			sync(true);
@@ -287,8 +379,16 @@ class QueuedFile implements Closeable {
 		if (fileLock != null) {
 			fileLock.release();
 		}
-		if (dataFile != null) {
+		if (dataFile != null) 
+		{
 			syncFinally();
+			
+			if (useMemMappedIO) {
+				if (headMMap != null)
+					headMMap.close();
+				if (tailMMap != null)
+					tailMMap.close();
+			}
 			dataFile.close();
 		}
 		fileLock = null;
@@ -297,7 +397,7 @@ class QueuedFile implements Closeable {
 		
 		
 	}
-
+	final Object mmapMutex = new Object();
 	private volatile boolean closed = false;
 	private void sync(boolean force) throws SyncFailedException, IOException
 	{
@@ -318,6 +418,7 @@ class QueuedFile implements Closeable {
 				close();
 			}
 			Files.delete(filePath);
+			//System.out.println("QueuedFile.delete()");
 		} catch (IOException e) {
 			// ignored
 			e.printStackTrace();
@@ -326,57 +427,48 @@ class QueuedFile implements Closeable {
 		return true;
 		
 	}
-	public static void main(String[] args) throws IOException {/*
+	public static void main(String[] args) throws IOException {
 		
-		final int ITERATION = 10000;
+		final int ITERATION = 3000;
 		final String msg = "MSG-";
 		
-		final QueuedFile qf = new QueuedFile(".", "test_file");
+		final FileBackedQueue qf = new FileBackedQueue(".", "test_file", true, true);
 		try {
 			
-			System.out.println(qf.isEmpty());
-			System.out.println(qf.size());
+			System.out.println("qf.isEmpty() ? "+qf.isEmpty());
+			System.out.println("qf.size() "+qf.size());
 			
 			//get
 			Thread conThread = new Thread(){
 				public void run()
 				{
+					System.out.println("starting consume for size "+qf.size());
+					long s = System.currentTimeMillis();
 					while(!qf.isEmpty()){
-						try {
-							System.out.println(new String(qf.getHead()));
+						try 
+						{
+							byte[] b = qf.getHead();
+							System.out.println(new String(b));
 						} catch (IOException e) {
 							e.printStackTrace();
 						}
 					}
+					long e = System.currentTimeMillis();
+					System.out.println("consume Time taken: "+(e-s)+" after consume Size "+qf.size());
 				}
 			};
 			
 			AtomicInteger i = new AtomicInteger();
-			ExecutorService exec = Executors.newSingleThreadExecutor();
+			ExecutorService exec = Executors.newFixedThreadPool(2);
 			//add
 			long s = System.currentTimeMillis();
-			
+									
 			for (; i.get() < ITERATION;) {
 				try {
 					qf.addTail((msg+i.getAndIncrement()).getBytes());
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
-				
-			}
-			
-			for (; i.get() < ITERATION;) {
-				exec.submit(new Runnable() {
-					
-					@Override
-					public void run() {
-						try {
-							qf.addTail((msg+i.getAndIncrement()).getBytes());
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
-					}
-				});
 				
 			}
 			exec.shutdown();
@@ -386,7 +478,7 @@ class QueuedFile implements Closeable {
 				
 			}
 			long e = System.currentTimeMillis();
-			System.out.println("Time taken: "+(e-s));
+			System.out.println("add Time taken: "+(e-s)+" Size "+qf.size());
 			
 			conThread.start();
 			try {
@@ -402,5 +494,5 @@ class QueuedFile implements Closeable {
 		}
 		
 	
-	*/}
+	}
 }

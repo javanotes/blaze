@@ -19,7 +19,7 @@ import java.io.IOException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.reactivetechnologies.mq.common.BlazeInternalException;
+import com.reactivetechnologies.mq.exceptions.BlazeInternalException;
 /**
  * Extends {@linkplain TextData} to store an object in its JSON form. 
  * @author esutdal

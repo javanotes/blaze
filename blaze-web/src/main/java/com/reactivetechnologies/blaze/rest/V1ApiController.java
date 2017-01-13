@@ -29,8 +29,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.reactivetechnologies.mq.QueueService;
-import com.reactivetechnologies.mq.common.BlazeMessagingException;
 import com.reactivetechnologies.mq.data.TextData;
+import com.reactivetechnologies.mq.exceptions.BlazeMessagingException;
+import com.reactivetechnologies.mq.exceptions.RedisUnavailableException;
 
 @RestController
 @RequestMapping("/api")
@@ -42,7 +43,8 @@ public class V1ApiController {
 	private static final Logger log = LoggerFactory.getLogger(V1ApiController.class);
 	
 	@Autowired
-	QueueService service;
+	private QueueService service;
+	
 	private ObjectMapper om;
 	@PostConstruct
 	private void init()
@@ -76,7 +78,11 @@ public class V1ApiController {
 		log.info("Adding to queue - ["+queue+"] "+json);
 		try {
 			return service.add(Arrays.asList(new TextData(json, queue)));
-		} catch (Exception e) {
+		} 
+		catch(RedisUnavailableException re){
+			throw re;
+		}
+		catch (Exception e) {
 			throw new BlazeMessagingException(e);
 		}
 	}
@@ -96,7 +102,11 @@ public class V1ApiController {
 		log.info("Adding to queue - ["+queue+"] "+text);
 		try {
 			return service.add(Arrays.asList(new TextData(text, queue)));
-		} catch (Exception e) {
+		} 
+		catch(RedisUnavailableException re){
+			throw re;
+		}
+		catch (Exception e) {
 			throw new BlazeMessagingException(e);
 		}
 	}
@@ -124,7 +134,11 @@ public class V1ApiController {
 		log.info("Adding to queue - ["+queue+"] "+list);
 		try {
 			service.ingest(list);
-		} catch (Exception e) {
+		} 
+		catch(RedisUnavailableException re){
+			throw re;
+		}
+		catch (Exception e) {
 			throw new BlazeMessagingException(e);
 		}
 	}
@@ -143,5 +157,10 @@ public class V1ApiController {
 	@ExceptionHandler({BlazeMessagingException.class})
 	public void onMessagingException(Throwable e){
 		log.error(HttpStatus.INTERNAL_SERVER_ERROR.name(), e);
+	}
+	@ResponseStatus(value=HttpStatus.SERVICE_UNAVAILABLE)
+	@ExceptionHandler({RedisUnavailableException.class})
+	public void onRedisUnreachable(Throwable e){
+		log.error(HttpStatus.SERVICE_UNAVAILABLE.name(), e);
 	}
 }

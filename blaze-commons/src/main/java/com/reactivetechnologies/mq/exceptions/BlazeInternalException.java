@@ -1,4 +1,4 @@
-package com.reactivetechnologies.mq.common;
+package com.reactivetechnologies.mq.exceptions;
 
 public class BlazeInternalException extends RuntimeException {
 
@@ -9,6 +9,9 @@ public class BlazeInternalException extends RuntimeException {
 
 	public BlazeInternalException(String msg, Throwable cause) {
 		super(msg, cause);
+	}
+	public BlazeInternalException() {
+		
 	}
 
 }

@@ -41,7 +41,7 @@ class IndexIterator implements Iterator<Long>,Closeable
   /**
    * 
    */
-  private final MappedFile mappedFile;
+  private final FileBackedMap mappedFile;
   private final long fptr;
   private long pos;
   private long idxOffset;
@@ -64,7 +64,7 @@ class IndexIterator implements Iterator<Long>,Closeable
    * @param mappedFile TODO
    * @throws IOException
    */
-  public IndexIterator(MappedFile mappedFile) throws IOException {
+  public IndexIterator(FileBackedMap mappedFile) throws IOException {
     this.mappedFile = mappedFile;
     fptr = this.mappedFile.getIndexFile().getFilePointer();
     pos = 0;

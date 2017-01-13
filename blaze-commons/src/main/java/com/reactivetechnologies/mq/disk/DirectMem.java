@@ -29,62 +29,42 @@ SOFTWARE.
 package com.reactivetechnologies.mq.disk;
 
 import java.lang.reflect.Method;
-import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 
-public class DirectMem {
+import org.springframework.util.ReflectionUtils;
 
-  /**
-   *   
-   * @param bb
-   * @return
-   */
-  public static boolean unmap(ByteBuffer bb)
-  {
-    /*
-     * From  sun.nio.ch.FileChannelImpl
-     * private static void  unmap(MappedByteBuffer bb) {
-          
-           Cleaner cl = ((DirectBuffer)bb).cleaner();
-           if (cl != null)
-               cl.clean();
+class DirectMem {
 
+	/**
+	 * 
+	 * @param bb
+	 * @return
+	 */
+	public static boolean unmap(MappedByteBuffer bb) {
+		/*
+		 * From sun.nio.ch.FileChannelImpl private static void
+		 * unmap(MappedByteBuffer bb) {
+		 * 
+		 * Cleaner cl = ((DirectBuffer)bb).cleaner(); if (cl != null)
+		 * cl.clean(); }
+		 */
+		try {
+			Method cleaner_method = ReflectionUtils.findMethod(bb.getClass(), "cleaner");
+			if (cleaner_method != null) {
+				cleaner_method.setAccessible(true);
+				Object cleaner = cleaner_method.invoke(bb);
+				if (cleaner != null) {
+					Method clean_method = ReflectionUtils.findMethod(cleaner.getClass(), "clean");
+					clean_method.setAccessible(true);
+					clean_method.invoke(cleaner);
+					return true;
+				}
+			}
 
-       }
-     */
-    Method cleaner_method = null, clean_method = null;
-    try 
-    {
-      if(cleaner_method == null)
-      {
-        cleaner_method = findMethod(bb.getClass(), "cleaner");
-        cleaner_method.setAccessible(true);
-      }
-      if (cleaner_method != null) {
-        Object cleaner = cleaner_method.invoke(bb);
-        if (cleaner != null) {
-          if (clean_method == null) {
-            clean_method = findMethod(cleaner.getClass(), "clean");
-            clean_method.setAccessible(true);
-          }
-          clean_method.invoke(cleaner);
-          return true;
-        } 
-      }
-
-    } catch (Throwable ex) 
-    {
-      //ignored   
-    }
-    return false;
-  }
-  
-  private static Method findMethod(Class<?> class1, String method) throws NoSuchMethodException {
-    for(Method m : class1.getDeclaredMethods())
-    {
-      if(m.getName().equals(method))
-        return m;
-    }
-    throw new NoSuchMethodException(method);
-  }
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
+		return false;
+	}
 
 }

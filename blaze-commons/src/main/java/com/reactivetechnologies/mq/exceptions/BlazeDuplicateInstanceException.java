@@ -13,27 +13,23 @@
    See the License for the specific language governing permissions and
    limitations under the License.
  */
-package com.reactivetechnologies.mq.container;
+package com.reactivetechnologies.mq.exceptions;
 
-import java.util.concurrent.TimeoutException;
+import org.springframework.beans.factory.BeanInitializationException;
 
-import com.reactivetechnologies.blaze.struct.QRecord;
-import com.reactivetechnologies.mq.exceptions.MessageThrottledException;
-
-public interface QueueContainerTask {
+public class BlazeDuplicateInstanceException extends BeanInitializationException {
 
 	/**
-	 * Fire callback on consumer.
-	 * @param qr
+	 * 
 	 */
-	void fireOnMessage(QRecord qr);
+	private static final long serialVersionUID = 5092121001960122919L;
 
-	/**
-	 * Perform a blocking fetch for queue head.
-	 * @return
-	 * @throws TimeoutException
-	 * @throws MessageThrottledException 
-	 */
-	QRecord fetchHead() throws TimeoutException, MessageThrottledException;
+	public BlazeDuplicateInstanceException(String msg) {
+		super(msg);
+	}
+
+	public BlazeDuplicateInstanceException(String msg, Throwable cause) {
+		super(msg, cause);
+	}
 
 }

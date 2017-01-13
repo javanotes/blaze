@@ -21,6 +21,7 @@ import java.util.Arrays;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -63,9 +64,18 @@ public class DeploymentRunner implements CommandLineRunner {
 	private QueueContainer container;
 	private Class<?> dataType;
 	private Object classImpl;
+	
 	private void loadClasses() throws ClassNotFoundException, InstantiationException, IllegalAccessException
 	{
+		newConsumer();
+		loadDataClass();
+	}
+	private void newConsumer() throws InstantiationException, IllegalAccessException, ClassNotFoundException
+	{
 		classImpl = deployer.classForName(className).newInstance();
+	}
+	private void loadDataClass() throws ClassNotFoundException 
+	{
 		dataType = deployer.classForName(dataName);
 	}
 	private void register()
@@ -98,7 +108,7 @@ public class DeploymentRunner implements CommandLineRunner {
 		}
 		else
 		{
-			log.info("* No deployment directory specified *");
+			log.warn("No deployment directory specified");
 			Object consumer = scanForConsumerClass();
 			if(consumer == null)
 			{
@@ -108,12 +118,21 @@ public class DeploymentRunner implements CommandLineRunner {
 			if(consumer != null)
 			{
 				classImpl = consumer;
-				dataType = TextData.class;
+				if (StringUtils.hasText(dataName)) {
+					try {
+						loadDataClass();
+					} catch (ClassNotFoundException e) {
+						throw new BeanCreationException("'Data' type not loaded", e);
+					} 
+				}
+				else{
+					dataType = TextData.class;
+				}
 				register();
 			}
 			else
 			{
-				log.warn("-- No consumer found. Container will shut down --");
+				log.error("** No consumer found for deployment. Container will shut down **");
 			}
 		}
 	}
@@ -166,7 +185,7 @@ public class DeploymentRunner implements CommandLineRunner {
 						try {
 							return newInstance(reader);
 						} catch (Throwable e) {
-							log.error("Unable to instantiate consumer found in full classpath scan. "+ e.getMessage());
+							log.error("Unable to instantiate consumer found in full classpath scan => "+ e.getMessage());
 							log.debug("", e);
 							return null;
 						}
@@ -199,11 +218,11 @@ public class DeploymentRunner implements CommandLineRunner {
 	}
 	private Object scanFromContext()
 	{
-		log.info("Checking for a single matching consumer class in Spring context");
+		log.info("Checking for a single matching consumer class from Spring context");
 		try {
 			return context.getBean(Consumer.class);
 		} catch (BeansException e) {
-			log.info("* No class found in Spring context * "+e.getMessage());
+			log.warn("No such class found in Spring context");
 		}
 		return null;
 	}
@@ -225,6 +244,7 @@ public class DeploymentRunner implements CommandLineRunner {
 
 	@SuppressWarnings("unchecked")
 	private <T extends Data> QueueListener<T> createListener() {
+		log.info("Registering consumer of type ["+classImpl.getClass()+"], consuming Data of "+dataType.getName());
 		return new QueueListenerBuilder()
 				.dataType((Class<T>) dataType)
 				.consumer((Consumer<T>) classImpl)

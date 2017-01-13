@@ -36,6 +36,7 @@ import org.springframework.data.redis.core.BoundListOperations;
 import org.springframework.stereotype.Component;
 
 import com.reactivetechnologies.blaze.struct.QRecord;
+import com.reactivetechnologies.mq.exceptions.RedisUnavailableException;
 import com.reactivetechnologies.mq.ops.ProducerOperations;
 @Component
 public class ProducerDataAccessor extends BaseDataAccessor implements ProducerOperations {
@@ -45,6 +46,9 @@ public class ProducerDataAccessor extends BaseDataAccessor implements ProducerOp
 	
 	@Value("${producer.connChecker.period.millis:5000}")
 	private long connCheckPeriodMillis = 5;
+	
+	@Value("${producer.connChecker.rejectOnUnavailable:true}")
+	private boolean isRejectOnRedisDown;
 		
 	private final Set<String> queueNames = new HashSet<>();
 	@Autowired
@@ -133,7 +137,7 @@ public class ProducerDataAccessor extends BaseDataAccessor implements ProducerOp
 	}
 	private void moveLocal() {
 		localData.moveAll(this);
-		log.info("Local queue/s moved to Redis ");
+		log.info("Local queue/s moved to Redis, or removed");
 	}
 	private void scheduleConnectionCheck()
 	{
@@ -164,6 +168,9 @@ public class ProducerDataAccessor extends BaseDataAccessor implements ProducerOp
 	}
 
 	private void enqueueLocally(String preparedKey, QRecord[] values) {
+		if(isRejectOnRedisDown)
+			throw new RedisUnavailableException();
+		
 		log.warn("Redis is unavailable. Will queue it locally");
 		localData.addAll(preparedKey, values);
 	}

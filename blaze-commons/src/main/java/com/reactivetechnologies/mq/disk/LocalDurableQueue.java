@@ -27,9 +27,9 @@ import java.util.Collection;
 import java.util.NoSuchElementException;
 
 import com.reactivetechnologies.mq.DataSerializable;
-import com.reactivetechnologies.mq.common.BlazeInternalException;
+import com.reactivetechnologies.mq.exceptions.BlazeInternalException;
 /**
- * A wrapper on {@linkplain QueuedFile} to be used as a generic queue.
+ * A wrapper on {@linkplain FileBackedQueue} to be used as a generic queue.
  * @author esutdal
  *
  * @param <E>
@@ -63,7 +63,7 @@ public class LocalDurableQueue<E extends DataSerializable> implements Closeable{
 				@Override
 				public boolean accept(File dir, String name) {
 					File f = new File(dir, name);
-					return f.isFile() && name.endsWith(QueuedFile.DB_FILE_SUFF);
+					return f.isFile() && name.endsWith(FileBackedQueue.DB_FILE_SUFF);
 				}
 			});
 		}
@@ -82,13 +82,13 @@ public class LocalDurableQueue<E extends DataSerializable> implements Closeable{
 		this.type = type;
 		directory = dir;
 		try {
-			file = new QueuedFile(dir, fileName, createIfAbsent);
+			file = new FileBackedQueue(dir, fileName, createIfAbsent);
 		} catch (IOException e) {
 			throw new BlazeInternalException("Unable to open queue file", e);
 		}
 	}
 
-	private QueuedFile file;
+	private FileBackedQueue file;
 	private final Class<E> type;
 	/**
 	 * Add all items one by one. This method simply invokes {@link #add()} iteratively.
@@ -143,7 +143,9 @@ public class LocalDurableQueue<E extends DataSerializable> implements Closeable{
 	private byte[] objectToBytes(E e) throws IOException
 	{
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
-		e.writeData(new DataOutputStream(out));
+		if (e != null) {
+			e.writeData(new DataOutputStream(out));
+		}
 		byte[] b = out.toByteArray();
 		//System.out.println("LocalDurableQueue.objectToBytes() length: "+b.length);
 		return b;
@@ -151,8 +153,10 @@ public class LocalDurableQueue<E extends DataSerializable> implements Closeable{
 	private E bytesToObject(byte[] b) throws InstantiationException, IllegalAccessException, ClassNotFoundException, IOException
 	{
 		E e = type.newInstance();
-		//System.out.println("LocalDurableQueue.bytesToObject() length: "+b.length);
-		e.readData(new DataInputStream(new ByteArrayInputStream(b)));
+		if (b != null) {
+			//System.out.println("LocalDurableQueue.bytesToObject() length: "+b.length);
+			e.readData(new DataInputStream(new ByteArrayInputStream(b)));
+		}
 		return e;
 	}
 	/**

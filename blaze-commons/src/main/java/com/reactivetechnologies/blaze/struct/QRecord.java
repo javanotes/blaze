@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.reactivetechnologies.mq.Data;
 import com.reactivetechnologies.mq.QueueService;
-import com.reactivetechnologies.mq.common.BlazeInternalException;
+import com.reactivetechnologies.mq.exceptions.BlazeInternalException;
 
 public class QRecord implements Serializable{
 

@@ -13,23 +13,29 @@
    See the License for the specific language governing permissions and
    limitations under the License.
  */
-package com.reactivetechnologies.mq.common;
+package com.reactivetechnologies.mq.exceptions;
 
-import org.springframework.beans.factory.BeanInitializationException;
-
-public class BlazeDuplicateInstanceException extends BeanInitializationException {
+public class MessageThrottledException extends Exception {
 
 	/**
 	 * 
 	 */
-	private static final long serialVersionUID = 5092121001960122919L;
+	private static final long serialVersionUID = 1L;
 
-	public BlazeDuplicateInstanceException(String msg) {
-		super(msg);
+	public MessageThrottledException() {
 	}
 
-	public BlazeDuplicateInstanceException(String msg, Throwable cause) {
-		super(msg, cause);
+	public MessageThrottledException(String arg0) {
+		super(arg0);
 	}
+
+	public MessageThrottledException(Throwable arg0) {
+		super(arg0);
+	}
+
+	public MessageThrottledException(String arg0, Throwable arg1) {
+		super(arg0, arg1);
+	}
+
 
 }

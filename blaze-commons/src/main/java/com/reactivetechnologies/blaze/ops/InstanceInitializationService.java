@@ -33,7 +33,7 @@ import org.springframework.data.redis.core.types.RedisClientInfo;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.stereotype.Component;
 
-import com.reactivetechnologies.mq.common.BlazeDuplicateInstanceException;
+import com.reactivetechnologies.mq.exceptions.BlazeDuplicateInstanceException;
 @Component
 class InstanceInitializationService
 {

@@ -41,9 +41,9 @@ import com.reactivetechnologies.blaze.struct.QRecord;
 import com.reactivetechnologies.mq.Data;
 import com.reactivetechnologies.mq.DataSerializable;
 import com.reactivetechnologies.mq.QueueService;
-import com.reactivetechnologies.mq.common.BlazeInternalException;
-import com.reactivetechnologies.mq.common.BlazeMessagingException;
 import com.reactivetechnologies.mq.container.QueueContainer;
+import com.reactivetechnologies.mq.exceptions.BlazeInternalException;
+import com.reactivetechnologies.mq.exceptions.BlazeMessagingException;
 
 /**
  * Abstract base class to be extended for registering queue listeners.

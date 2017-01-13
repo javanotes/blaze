@@ -1,4 +1,4 @@
-package com.reactivetechnologies.mq.common;
+package com.reactivetechnologies.mq.exceptions;
 
 import com.reactivetechnologies.mq.Data;
 
